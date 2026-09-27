@@ -41,7 +41,9 @@ class ControlsPanel(QWidget):
         self.progress_slider.setEnabled(False)
         self.playlist_toggle_button = QPushButton("Плейлист")
         self.playlist_toggle_button.setCheckable(True)
+        self.previous_button = QPushButton()
         self.play_pause_button = QPushButton()
+        self.next_button = QPushButton()
         self.mute_button = QPushButton()
         self.volume_slider = QSlider(
             Qt.Orientation.Horizontal
@@ -51,11 +53,17 @@ class ControlsPanel(QWidget):
         self.volume_value_label = QLabel("70%")
 
         style = self.style()
+        self.previous_icon = style.standardIcon(
+            QStyle.StandardPixmap.SP_MediaSkipBackward
+        )
         self.play_icon = style.standardIcon(
             QStyle.StandardPixmap.SP_MediaPlay
         )
         self.pause_icon = style.standardIcon(
             QStyle.StandardPixmap.SP_MediaPause
+        )
+        self.next_icon = style.standardIcon(
+            QStyle.StandardPixmap.SP_MediaSkipForward
         )
         self.volume_icon = style.standardIcon(
             QStyle.StandardPixmap.SP_MediaVolume
@@ -64,11 +72,24 @@ class ControlsPanel(QWidget):
             QStyle.StandardPixmap.SP_MediaVolumeMuted
         )
 
-        self.play_pause_button.setIcon(self.play_icon)
-        self.play_pause_button.setIconSize(QSize(24, 24))
-        self.play_pause_button.setFixedSize(QSize(32, 30))
+        for button, icon in (
+            (self.previous_button, self.previous_icon),
+            (self.play_pause_button, self.play_icon),
+            (self.next_button, self.next_icon),
+        ):
+            button.setIcon(icon)
+            button.setIconSize(QSize(24, 24))
+            button.setFixedSize(QSize(32, 30))
+
+        self.previous_button.setToolTip(
+            "Попередній елемент плейлиста"
+        )
         self.play_pause_button.setToolTip("Відтворити")
         self.play_pause_button.setEnabled(False)
+        self.next_button.setToolTip(
+            "Наступний елемент плейлиста"
+        )
+        self.set_navigation_enabled(False, False)
 
         self.playlist_toggle_button.setFixedWidth(105)
         self.playlist_toggle_button.setToolTip(
@@ -92,7 +113,10 @@ class ControlsPanel(QWidget):
         self.center_controls = QWidget()
         center_layout = QHBoxLayout(self.center_controls)
         center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(4)
+        center_layout.addWidget(self.previous_button)
         center_layout.addWidget(self.play_pause_button)
+        center_layout.addWidget(self.next_button)
 
         self.right_controls = QWidget()
         right_layout = QHBoxLayout(self.right_controls)
@@ -156,6 +180,10 @@ class ControlsPanel(QWidget):
         self.total_time_label.setText("00:00")
         self.progress_slider.setValue(0)
         self.set_playing(False)
+
+    def set_navigation_enabled(self, previous, next_):
+        self.previous_button.setEnabled(previous)
+        self.next_button.setEnabled(next_)
 
     def set_playing(self, playing, restart=False):
         if playing:

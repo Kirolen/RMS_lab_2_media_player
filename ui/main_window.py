@@ -88,8 +88,14 @@ class MainWindow(QMainWindow):
         self.controls.playlist_toggle_button.clicked.connect(
             self._toggle_playlist_panel
         )
+        self.controls.previous_button.clicked.connect(
+            self._play_previous
+        )
         self.controls.play_pause_button.clicked.connect(
             self._toggle_playback
+        )
+        self.controls.next_button.clicked.connect(
+            self._play_next
         )
         self.controls.progress_slider.sliderReleased.connect(
             self._seek
@@ -177,6 +183,7 @@ class MainWindow(QMainWindow):
     def _add_to_playlist(self, source, display_name):
         index = self.playlist.add(source, display_name)
         self.playlist_panel.add_item(display_name, source)
+        self._sync_navigation_state()
         return index
 
     def _load_playlist_index(self, index):
@@ -187,11 +194,34 @@ class MainWindow(QMainWindow):
 
         self.playlist_panel.select(index)
         self.load_media(item.source, item.display_name)
+        self._sync_navigation_state()
         return True
 
     def _play_playlist_item(self, item):
         index = self.playlist_panel.list_widget.row(item)
         self._load_playlist_index(index)
+
+    @log_call
+    def _play_previous(self):
+        index = self.playlist.get_previous_index()
+
+        if index is not None:
+            self._load_playlist_index(index)
+
+    @log_call
+    def _play_next(self):
+        index = self.playlist.get_next_index()
+
+        if index is not None:
+            self._load_playlist_index(index)
+
+    def _sync_navigation_state(self):
+        current_index = self.playlist.get_current_index()
+        last_index = self.playlist.count() - 1
+        self.controls.set_navigation_enabled(
+            current_index > 0,
+            0 <= current_index < last_index,
+        )
 
     @log_call
     def _toggle_playlist_panel(self):
@@ -284,6 +314,12 @@ class MainWindow(QMainWindow):
         if self.player.has_ended():
             if not self._playback_finished:
                 self._playback_finished = True
+                next_index = self.playlist.get_next_index()
+
+                if next_index is not None:
+                    self._load_playlist_index(next_index)
+                    return
+
                 self.controls.set_finished(
                     self.player.get_length()
                 )

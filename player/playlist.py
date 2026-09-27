@@ -38,5 +38,19 @@ class Playlist:
     def get_current_index(self):
         return self._current_index
 
+    def get_previous_index(self):
+        if self._current_index <= 0:
+            return None
+
+        return self._current_index - 1
+
+    def get_next_index(self):
+        next_index = self._current_index + 1
+
+        if next_index >= len(self._items):
+            return None
+
+        return next_index
+
     def count(self):
         return len(self._items)
