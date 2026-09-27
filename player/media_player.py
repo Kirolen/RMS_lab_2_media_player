@@ -79,6 +79,12 @@ class MediaPlayer:
             and self._player.get_state() == vlc.State.Ended
         )
 
+    def has_error(self):
+        return (
+            not self._is_released
+            and self._player.get_state() == vlc.State.Error
+        )
+
     def get_time(self):
         if self._is_released:
             return 0

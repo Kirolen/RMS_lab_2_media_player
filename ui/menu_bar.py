@@ -34,6 +34,7 @@ QMenu::item:selected {
 @dataclass(frozen=True, slots=True)
 class MenuActions:
     open_file: QAction
+    open_url: QAction
 
 
 def setup_menu_bar(window):
@@ -44,6 +45,13 @@ def setup_menu_bar(window):
     file_menu = menu_bar.addMenu("Файл")
     open_file = QAction("Відкрити медіафайл...", window)
     open_file.setShortcut(QKeySequence("Ctrl+O"))
-    file_menu.addAction(open_file)
 
-    return MenuActions(open_file=open_file)
+    open_url = QAction("Відкрити URL...", window)
+
+    file_menu.addAction(open_file)
+    file_menu.addAction(open_url)
+
+    return MenuActions(
+        open_file=open_file,
+        open_url=open_url,
+    )

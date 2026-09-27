@@ -1,10 +1,13 @@
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import QSignalBlocker, QTimer, Qt
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
+    QInputDialog,
     QMainWindow,
+    QMessageBox,
     QVBoxLayout,
     QWidget,
 )
@@ -13,6 +16,7 @@ from player.media_player import MediaPlayer
 from ui.controls_panel import ControlsPanel
 from ui.menu_bar import setup_menu_bar
 from utils.logger import log_call
+from utils.media_sources import is_valid_media_url
 
 
 MEDIA_FILTER = (
@@ -20,6 +24,8 @@ MEDIA_FILTER = (
     "(*.mp4 *.mkv *.avi *.mov *.webm *.mp3 *.wav);;"
     "Усі файли (*)"
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
@@ -29,6 +35,7 @@ class MainWindow(QMainWindow):
 
         self.current_media_source = None
         self._playback_finished = False
+        self._playback_error_shown = False
         self.setWindowTitle("Media Player")
         self.resize(960, 640)
         self.setMinimumSize(720, 480)
@@ -62,6 +69,9 @@ class MainWindow(QMainWindow):
 
         self.menu_actions.open_file.triggered.connect(
             self._open_file
+        )
+        self.menu_actions.open_url.triggered.connect(
+            self._open_url
         )
         self.controls.play_pause_button.clicked.connect(
             self._toggle_playback
@@ -106,18 +116,43 @@ class MainWindow(QMainWindow):
             self.load_media(file_path)
 
     @log_call
-    def load_media(self, file_path):
-        self.current_media_source = file_path
+    def _open_url(self):
+        url, confirmed = QInputDialog.getText(
+            self,
+            "Відкрити URL",
+            "Введіть пряме посилання на медіафайл:",
+        )
+        url = url.strip()
+
+        if not confirmed or not url:
+            return
+
+        if not is_valid_media_url(url):
+            self._show_error(
+                "Некоректний URL",
+                "Введіть повне посилання, яке починається "
+                "з http:// або https://.",
+            )
+            return
+
+        self.load_media(url, url)
+
+    @log_call
+    def load_media(self, media_source, display_name=None):
+        self.current_media_source = media_source
         self._playback_finished = False
-        self.player.load(file_path)
+        self._playback_error_shown = False
+        self.player.load(media_source)
         self.controls.set_media(
-            Path(file_path).name,
-            file_path,
+            display_name or Path(media_source).name,
+            media_source,
         )
 
         if self.player.play():
             self._playback_finished = False
             self.controls.set_playing(True)
+        else:
+            self._show_playback_error()
 
     @log_call
     def _seek(self):
@@ -177,6 +212,10 @@ class MainWindow(QMainWindow):
         if self.current_media_source is None:
             return
 
+        if self.player.has_error():
+            self._show_playback_error()
+            return
+
         if self.player.has_ended():
             if not self._playback_finished:
                 self._playback_finished = True
@@ -190,6 +229,21 @@ class MainWindow(QMainWindow):
             self.player.get_length(),
             self.player.get_position(),
         )
+
+    def _show_playback_error(self):
+        if self._playback_error_shown:
+            return
+
+        self._playback_error_shown = True
+        self.controls.set_playing(False)
+        self._show_error(
+            "Помилка відтворення",
+            "Не вдалося відкрити медіа. Перевірте файл або URL.",
+        )
+
+    def _show_error(self, title, message):
+        logger.error("%s | %s", title, message)
+        QMessageBox.critical(self, title, message)
 
     def _position_controls_panel(self):
         central_widget = self.centralWidget()
