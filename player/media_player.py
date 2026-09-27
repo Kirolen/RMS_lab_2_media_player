@@ -46,8 +46,33 @@ class MediaPlayer:
 
     @log_call
     def play(self):
-        if not self._is_released and self._media is not None:
-            self._player.play()
+        if self._is_released or self._media is None:
+            return False
+
+        if self.has_ended():
+            self._player.set_time(0)
+
+        return self._player.play() != -1
+
+    @log_call
+    def pause(self):
+        if self._is_released or self._media is None:
+            return False
+
+        self._player.set_pause(1)
+        return True
+
+    def is_playing(self):
+        return (
+            not self._is_released
+            and bool(self._player.is_playing())
+        )
+
+    def has_ended(self):
+        return (
+            not self._is_released
+            and self._player.get_state() == vlc.State.Ended
+        )
 
     @log_call
     def release(self):
