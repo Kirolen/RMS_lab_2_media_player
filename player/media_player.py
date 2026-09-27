@@ -74,6 +74,33 @@ class MediaPlayer:
             and self._player.get_state() == vlc.State.Ended
         )
 
+    def get_time(self):
+        if self._is_released:
+            return 0
+
+        return max(0, self._player.get_time())
+
+    def get_length(self):
+        if self._is_released:
+            return 0
+
+        return max(0, self._player.get_length())
+
+    def get_position(self):
+        if self._is_released:
+            return 0.0
+
+        position = self._player.get_position()
+        return min(1.0, max(0.0, position))
+
+    @log_call
+    def set_position(self, position):
+        if self._is_released or self._media is None:
+            return
+
+        position = min(1.0, max(0.0, position))
+        self._player.set_position(position)
+
     @log_call
     def release(self):
         if self._is_released:

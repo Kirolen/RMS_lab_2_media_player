@@ -28,6 +28,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.current_media_source = None
+        self._playback_finished = False
         self.setWindowTitle("Media Player")
         self.resize(960, 640)
         self.setMinimumSize(720, 480)
@@ -65,6 +66,9 @@ class MainWindow(QMainWindow):
         self.controls.play_pause_button.clicked.connect(
             self._toggle_playback
         )
+        self.controls.progress_slider.sliderReleased.connect(
+            self._seek
+        )
 
         self.playback_timer = QTimer(self)
         self.playback_timer.setInterval(250)
@@ -90,6 +94,7 @@ class MainWindow(QMainWindow):
     @log_call
     def load_media(self, file_path):
         self.current_media_source = file_path
+        self._playback_finished = False
         self.player.load(file_path)
         self.controls.set_media(
             Path(file_path).name,
@@ -97,7 +102,15 @@ class MainWindow(QMainWindow):
         )
 
         if self.player.play():
+            self._playback_finished = False
             self.controls.set_playing(True)
+
+    @log_call
+    def _seek(self):
+        position = self.controls.progress_slider.value() / 1000
+        self.player.set_position(position)
+        self._playback_finished = False
+        self._update_playback_state()
 
     @log_call
     def _toggle_playback(self):
@@ -110,11 +123,26 @@ class MainWindow(QMainWindow):
             return
 
         if self.player.play():
+            self._playback_finished = False
             self.controls.set_playing(True)
 
     def _update_playback_state(self):
+        if self.current_media_source is None:
+            return
+
         if self.player.has_ended():
-            self.controls.set_playing(False, restart=True)
+            if not self._playback_finished:
+                self._playback_finished = True
+                self.controls.set_finished(
+                    self.player.get_length()
+                )
+            return
+
+        self.controls.update_progress(
+            self.player.get_time(),
+            self.player.get_length(),
+            self.player.get_position(),
+        )
 
     def _position_controls_panel(self):
         central_widget = self.centralWidget()
