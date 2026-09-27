@@ -40,6 +40,13 @@ class ControlsPanel(QWidget):
         self.progress_slider.setRange(0, 1000)
         self.progress_slider.setEnabled(False)
         self.play_pause_button = QPushButton()
+        self.mute_button = QPushButton()
+        self.volume_slider = QSlider(
+            Qt.Orientation.Horizontal
+        )
+        self.volume_slider.setRange(0, 100)
+        self.volume_slider.setValue(70)
+        self.volume_value_label = QLabel("70%")
 
         style = self.style()
         self.play_icon = style.standardIcon(
@@ -48,6 +55,12 @@ class ControlsPanel(QWidget):
         self.pause_icon = style.standardIcon(
             QStyle.StandardPixmap.SP_MediaPause
         )
+        self.volume_icon = style.standardIcon(
+            QStyle.StandardPixmap.SP_MediaVolume
+        )
+        self.muted_icon = style.standardIcon(
+            QStyle.StandardPixmap.SP_MediaVolumeMuted
+        )
 
         self.play_pause_button.setIcon(self.play_icon)
         self.play_pause_button.setIconSize(QSize(24, 24))
@@ -55,15 +68,45 @@ class ControlsPanel(QWidget):
         self.play_pause_button.setToolTip("Відтворити")
         self.play_pause_button.setEnabled(False)
 
+        self.mute_button.setIcon(self.volume_icon)
+        self.mute_button.setIconSize(QSize(24, 24))
+        self.mute_button.setFixedSize(QSize(32, 30))
+        self.mute_button.setToolTip("Вимкнути звук")
+        self.volume_slider.setFixedWidth(65)
+        self.volume_slider.setToolTip("Гучність")
+        self.volume_value_label.setFixedWidth(30)
+
+        self.center_controls = QWidget()
+        center_layout = QHBoxLayout(self.center_controls)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.addWidget(self.play_pause_button)
+
+        self.right_controls = QWidget()
+        right_layout = QHBoxLayout(self.right_controls)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(4)
+        right_layout.addWidget(self.mute_button)
+        right_layout.addWidget(self.volume_slider)
+        right_layout.addWidget(self.volume_value_label)
+
+        side_width = self.right_controls.sizeHint().width()
         controls_layout = QGridLayout()
         controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setColumnMinimumWidth(0, side_width)
+        controls_layout.setColumnMinimumWidth(2, side_width)
         controls_layout.setColumnStretch(0, 1)
         controls_layout.setColumnStretch(2, 1)
         controls_layout.addWidget(
-            self.play_pause_button,
+            self.center_controls,
             0,
             1,
             Qt.AlignmentFlag.AlignHCenter,
+        )
+        controls_layout.addWidget(
+            self.right_controls,
+            0,
+            2,
+            Qt.AlignmentFlag.AlignRight,
         )
 
         timeline_layout = QHBoxLayout()
@@ -116,6 +159,15 @@ class ControlsPanel(QWidget):
         self.progress_slider.setValue(1000)
         self.set_playing(False, restart=True)
 
+    def set_volume_state(self, volume, muted):
+        self.volume_value_label.setText(f"{volume}%")
+        self.mute_button.setIcon(
+            self.muted_icon if muted else self.volume_icon
+        )
+        self.mute_button.setToolTip(
+            "Увімкнути звук" if muted else "Вимкнути звук"
+        )
+
     def height_hint(self):
         margins = self._layout.contentsMargins()
         timeline_height = max(
@@ -128,6 +180,9 @@ class ControlsPanel(QWidget):
             + margins.bottom()
             + self.media_label.sizeHint().height()
             + timeline_height
-            + self.play_pause_button.sizeHint().height()
+            + max(
+                self.center_controls.sizeHint().height(),
+                self.right_controls.sizeHint().height(),
+            )
             + self._layout.spacing() * 2
         )

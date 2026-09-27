@@ -15,6 +15,9 @@ class MediaPlayer:
         self._player = self._vlc_instance.media_player_new()
         self._media = None
         self._window_id = None
+        self._volume = 70
+        self._last_volume = 70
+        self._is_muted = False
         self._is_released = False
 
     def set_video_output(self, window_id):
@@ -43,6 +46,8 @@ class MediaPlayer:
 
         if self._window_id is not None:
             self.set_video_output(self._window_id)
+
+        self._player.audio_set_volume(self._volume)
 
     @log_call
     def play(self):
@@ -100,6 +105,30 @@ class MediaPlayer:
 
         position = min(1.0, max(0.0, position))
         self._player.set_position(position)
+
+    @log_call
+    def set_volume(self, volume, remember=True):
+        self._volume = min(100, max(0, int(volume)))
+
+        if remember and self._volume > 0:
+            self._last_volume = self._volume
+
+        self._is_muted = self._volume == 0
+
+        if not self._is_released:
+            self._player.audio_set_volume(self._volume)
+
+    @log_call
+    def toggle_mute(self):
+        volume = self._last_volume if self._is_muted else 0
+        self.set_volume(volume)
+        return self._is_muted
+
+    def get_volume(self):
+        return self._volume
+
+    def is_muted(self):
+        return self._is_muted
 
     @log_call
     def release(self):

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QSignalBlocker, QTimer, Qt
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -69,6 +69,15 @@ class MainWindow(QMainWindow):
         self.controls.progress_slider.sliderReleased.connect(
             self._seek
         )
+        self.controls.volume_slider.valueChanged.connect(
+            self._change_volume
+        )
+        self.controls.volume_slider.sliderReleased.connect(
+            self._finish_volume_change
+        )
+        self.controls.mute_button.clicked.connect(
+            self._toggle_mute
+        )
 
         self.playback_timer = QTimer(self)
         self.playback_timer.setInterval(250)
@@ -76,6 +85,11 @@ class MainWindow(QMainWindow):
             self._update_playback_state
         )
         self.playback_timer.start()
+
+        self.player.set_volume(
+            self.controls.volume_slider.value()
+        )
+        self._sync_volume_state()
 
         QTimer.singleShot(0, self._position_controls_panel)
 
@@ -111,6 +125,39 @@ class MainWindow(QMainWindow):
         self.player.set_position(position)
         self._playback_finished = False
         self._update_playback_state()
+
+    def _change_volume(self, volume):
+        self.player.set_volume(
+            volume,
+            remember=(
+                not self.controls.volume_slider.isSliderDown()
+            ),
+        )
+        self.controls.set_volume_state(
+            self.player.get_volume(),
+            self.player.is_muted(),
+        )
+
+    def _finish_volume_change(self):
+        self.player.set_volume(
+            self.controls.volume_slider.value()
+        )
+        self._sync_volume_state()
+
+    @log_call
+    def _toggle_mute(self):
+        self.player.toggle_mute()
+        self._sync_volume_state()
+
+    def _sync_volume_state(self):
+        slider = self.controls.volume_slider
+        blocker = QSignalBlocker(slider)
+        slider.setValue(self.player.get_volume())
+        del blocker
+        self.controls.set_volume_state(
+            self.player.get_volume(),
+            self.player.is_muted(),
+        )
 
     @log_call
     def _toggle_playback(self):
