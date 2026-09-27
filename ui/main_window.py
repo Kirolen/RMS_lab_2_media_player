@@ -13,8 +13,10 @@ from PySide6.QtWidgets import (
 )
 
 from player.media_player import MediaPlayer
+from player.playlist import Playlist
 from ui.controls_panel import ControlsPanel
 from ui.menu_bar import setup_menu_bar
+from ui.playlist_panel import PlaylistPanel
 from utils.logger import log_call
 from utils.media_sources import is_valid_media_url
 
@@ -59,10 +61,14 @@ class MainWindow(QMainWindow):
         )
         self.main_layout.addWidget(self.video_frame, stretch=1)
 
+        self.playlist_panel = PlaylistPanel(central_widget)
+        self.playlist_panel.hide()
         self.controls = ControlsPanel(central_widget)
+        self.playlist_panel.raise_()
         self.controls.raise_()
 
         self.player = MediaPlayer()
+        self.playlist = Playlist()
         self.player.set_video_output(
             int(self.video_frame.winId())
         )
@@ -72,6 +78,15 @@ class MainWindow(QMainWindow):
         )
         self.menu_actions.open_url.triggered.connect(
             self._open_url
+        )
+        self.playlist_panel.add_button.clicked.connect(
+            self._add_files_to_playlist
+        )
+        self.playlist_panel.list_widget.itemDoubleClicked.connect(
+            self._play_playlist_item
+        )
+        self.controls.playlist_toggle_button.clicked.connect(
+            self._toggle_playlist_panel
         )
         self.controls.play_pause_button.clicked.connect(
             self._toggle_playback
@@ -101,7 +116,7 @@ class MainWindow(QMainWindow):
         )
         self._sync_volume_state()
 
-        QTimer.singleShot(0, self._position_controls_panel)
+        QTimer.singleShot(0, self._position_overlay_panels)
 
     @log_call
     def _open_file(self):
@@ -112,8 +127,29 @@ class MainWindow(QMainWindow):
             MEDIA_FILTER,
         )
 
-        if file_path:
-            self.load_media(file_path)
+        if not file_path:
+            return
+
+        index = self._add_to_playlist(
+            file_path,
+            Path(file_path).name,
+        )
+        self._load_playlist_index(index)
+
+    @log_call
+    def _add_files_to_playlist(self):
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Додати медіафайли до плейлиста",
+            "",
+            MEDIA_FILTER,
+        )
+
+        for file_path in file_paths:
+            self._add_to_playlist(
+                file_path,
+                Path(file_path).name,
+            )
 
     @log_call
     def _open_url(self):
@@ -135,7 +171,36 @@ class MainWindow(QMainWindow):
             )
             return
 
-        self.load_media(url, url)
+        index = self._add_to_playlist(url, url)
+        self._load_playlist_index(index)
+
+    def _add_to_playlist(self, source, display_name):
+        index = self.playlist.add(source, display_name)
+        self.playlist_panel.add_item(display_name, source)
+        return index
+
+    def _load_playlist_index(self, index):
+        item = self.playlist.select(index)
+
+        if item is None:
+            return False
+
+        self.playlist_panel.select(index)
+        self.load_media(item.source, item.display_name)
+        return True
+
+    def _play_playlist_item(self, item):
+        index = self.playlist_panel.list_widget.row(item)
+        self._load_playlist_index(index)
+
+    @log_call
+    def _toggle_playlist_panel(self):
+        show_playlist = self.playlist_panel.isHidden()
+        self.playlist_panel.setVisible(show_playlist)
+        self.controls.playlist_toggle_button.setChecked(
+            show_playlist
+        )
+        self._position_overlay_panels()
 
     @log_call
     def load_media(self, media_source, display_name=None):
@@ -245,6 +310,29 @@ class MainWindow(QMainWindow):
         logger.error("%s | %s", title, message)
         QMessageBox.critical(self, title, message)
 
+    def _position_overlay_panels(self):
+        self._position_playlist_panel()
+        self._position_controls_panel()
+
+    def _position_playlist_panel(self):
+        central_widget = self.centralWidget()
+
+        if central_widget is None:
+            return
+
+        video_position = self.video_frame.mapTo(
+            central_widget,
+            self.video_frame.rect().topLeft(),
+        )
+        playlist_width = min(260, self.video_frame.width())
+        self.playlist_panel.setGeometry(
+            video_position.x(),
+            video_position.y(),
+            playlist_width,
+            self.video_frame.height(),
+        )
+        self.playlist_panel.raise_()
+
     def _position_controls_panel(self):
         central_widget = self.centralWidget()
 
@@ -271,11 +359,14 @@ class MainWindow(QMainWindow):
             panel_width,
             panel_height,
         )
+        self.playlist_panel.set_overlay_bottom_margin(
+            panel_height + 6
+        )
         self.controls.raise_()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._position_controls_panel()
+        self._position_overlay_panels()
 
     @log_call
     def closeEvent(self, event):

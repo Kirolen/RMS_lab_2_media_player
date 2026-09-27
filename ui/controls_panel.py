@@ -39,6 +39,8 @@ class ControlsPanel(QWidget):
         )
         self.progress_slider.setRange(0, 1000)
         self.progress_slider.setEnabled(False)
+        self.playlist_toggle_button = QPushButton("Плейлист")
+        self.playlist_toggle_button.setCheckable(True)
         self.play_pause_button = QPushButton()
         self.mute_button = QPushButton()
         self.volume_slider = QSlider(
@@ -68,6 +70,11 @@ class ControlsPanel(QWidget):
         self.play_pause_button.setToolTip("Відтворити")
         self.play_pause_button.setEnabled(False)
 
+        self.playlist_toggle_button.setFixedWidth(105)
+        self.playlist_toggle_button.setToolTip(
+            "Показати або сховати плейлист"
+        )
+
         self.mute_button.setIcon(self.volume_icon)
         self.mute_button.setIconSize(QSize(24, 24))
         self.mute_button.setFixedSize(QSize(32, 30))
@@ -75,6 +82,12 @@ class ControlsPanel(QWidget):
         self.volume_slider.setFixedWidth(65)
         self.volume_slider.setToolTip("Гучність")
         self.volume_value_label.setFixedWidth(30)
+
+        self.left_controls = QWidget()
+        left_layout = QHBoxLayout(self.left_controls)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(4)
+        left_layout.addWidget(self.playlist_toggle_button)
 
         self.center_controls = QWidget()
         center_layout = QHBoxLayout(self.center_controls)
@@ -89,13 +102,23 @@ class ControlsPanel(QWidget):
         right_layout.addWidget(self.volume_slider)
         right_layout.addWidget(self.volume_value_label)
 
-        side_width = self.right_controls.sizeHint().width()
+        side_width = max(
+            self.left_controls.sizeHint().width(),
+            self.right_controls.sizeHint().width(),
+        )
         controls_layout = QGridLayout()
         controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setHorizontalSpacing(4)
         controls_layout.setColumnMinimumWidth(0, side_width)
         controls_layout.setColumnMinimumWidth(2, side_width)
         controls_layout.setColumnStretch(0, 1)
         controls_layout.setColumnStretch(2, 1)
+        controls_layout.addWidget(
+            self.left_controls,
+            0,
+            0,
+            Qt.AlignmentFlag.AlignLeft,
+        )
         controls_layout.addWidget(
             self.center_controls,
             0,
@@ -181,6 +204,7 @@ class ControlsPanel(QWidget):
             + self.media_label.sizeHint().height()
             + timeline_height
             + max(
+                self.left_controls.sizeHint().height(),
                 self.center_controls.sizeHint().height(),
                 self.right_controls.sizeHint().height(),
             )
