@@ -1,0 +1,70 @@
+import sys
+
+import vlc
+
+from utils.logger import log_call
+
+
+class MediaPlayer:
+    @log_call
+    def __init__(self):
+        self._vlc_instance = vlc.Instance(
+            "--no-video-title-show",
+            "--quiet",
+        )
+        self._player = self._vlc_instance.media_player_new()
+        self._media = None
+        self._window_id = None
+        self._is_released = False
+
+    def set_video_output(self, window_id):
+        self._window_id = window_id
+
+        if sys.platform.startswith("win"):
+            self._player.set_hwnd(window_id)
+        elif sys.platform.startswith("linux"):
+            self._player.set_xwindow(window_id)
+        elif sys.platform == "darwin":
+            self._player.set_nsobject(window_id)
+
+    @log_call
+    def load(self, file_path):
+        if self._is_released:
+            return
+
+        new_media = self._vlc_instance.media_new(file_path)
+        self._player.set_media(new_media)
+
+        old_media = self._media
+        self._media = new_media
+
+        if old_media is not None:
+            old_media.release()
+
+        if self._window_id is not None:
+            self.set_video_output(self._window_id)
+
+    @log_call
+    def play(self):
+        if not self._is_released and self._media is not None:
+            self._player.play()
+
+    @log_call
+    def release(self):
+        if self._is_released:
+            return
+
+        self._is_released = True
+        media = self._media
+        player = self._player
+        instance = self._vlc_instance
+        self._media = None
+        self._player = None
+        self._vlc_instance = None
+
+        if media is not None:
+            media.release()
+        if player is not None:
+            player.release()
+        if instance is not None:
+            instance.release()
