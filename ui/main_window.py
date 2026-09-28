@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QSignalBlocker, QTimer, Qt
+from PySide6.QtCore import QEvent, QSignalBlocker, Qt, QTimer
 from PySide6.QtGui import QCursor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from player.media_player import MediaPlayer
+from player.playback_controller import PlaybackController
 from player.playlist import Playlist
 from ui.controls_panel import ControlsPanel
 from ui.menu_bar import setup_menu_bar
@@ -26,6 +27,7 @@ from utils.media_sources import (
     is_valid_media_url,
 )
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,8 +37,6 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.current_media_source = None
-        self._playback_finished = False
-        self._playback_error_shown = False
         self._was_maximized_before_fullscreen = False
         self._playlist_was_visible_before_fullscreen = False
         self._last_mouse_position = None
@@ -50,6 +50,11 @@ class MainWindow(QMainWindow):
 
         self.player = MediaPlayer()
         self.playlist = Playlist()
+        self.playback = PlaybackController(
+            self.player,
+            self.playlist,
+            self,
+        )
 
         self._connect_signals()
         self._setup_shortcuts()
@@ -59,10 +64,9 @@ class MainWindow(QMainWindow):
         self.player.set_video_output(
             int(self.video_frame.winId())
         )
-        self.player.set_volume(
+        self.playback.set_volume(
             self.controls.volume_slider.value()
         )
-        self._sync_volume_state()
         self._schedule_layout_update()
 
     def _setup_ui(self):
@@ -84,15 +88,31 @@ class MainWindow(QMainWindow):
         self.video_frame.setStyleSheet(
             "#videoFrame { background-color: #111111; }"
         )
-        self.main_layout.addWidget(self.video_frame, stretch=1)
+
+        self.video_interaction_layer = QWidget(central_widget)
+        self.video_interaction_layer.setObjectName(
+            "videoInteractionLayer"
+        )
+        self.video_interaction_layer.setStyleSheet(
+            "#videoInteractionLayer { background: transparent; }"
+        )
 
         self.playlist_panel = PlaylistPanel(central_widget)
         self.playlist_panel.hide()
+
         self.controls = ControlsPanel(central_widget)
+
+        self.main_layout.addWidget(
+            self.video_frame,
+            stretch=1,
+        )
+        self.video_interaction_layer.raise_()
         self.playlist_panel.raise_()
         self.controls.raise_()
 
     def _connect_signals(self):
+        controls = self.controls
+
         self.menu_actions.open_file.triggered.connect(
             self._open_file
         )
@@ -105,50 +125,102 @@ class MainWindow(QMainWindow):
         self.playlist_panel.list_widget.itemDoubleClicked.connect(
             self._play_playlist_item
         )
-        self.controls.playlist_toggle_button.clicked.connect(
+
+        controls.playlist_toggle_button.clicked.connect(
             self._toggle_playlist_panel
         )
-        self.controls.previous_button.clicked.connect(
-            self._play_previous
+        controls.previous_button.clicked.connect(
+            self.playback.play_previous
         )
-        self.controls.backward_button.clicked.connect(
-            lambda: self._seek_relative(-10_000)
+        controls.backward_button.clicked.connect(
+            lambda: self.playback.seek_relative(-10_000)
         )
-        self.controls.play_pause_button.clicked.connect(
-            self._toggle_playback
+        controls.play_pause_button.clicked.connect(
+            self.playback.toggle_playback
         )
-        self.controls.forward_button.clicked.connect(
-            lambda: self._seek_relative(10_000)
+        controls.forward_button.clicked.connect(
+            lambda: self.playback.seek_relative(10_000)
         )
-        self.controls.next_button.clicked.connect(
-            self._play_next
+        controls.next_button.clicked.connect(
+            self.playback.play_next
         )
-        self.controls.fullscreen_button.clicked.connect(
+        controls.fullscreen_button.clicked.connect(
             self._toggle_fullscreen
         )
-        self.controls.speed_combo.currentIndexChanged.connect(
+        controls.speed_combo.currentIndexChanged.connect(
             self._change_playback_rate
         )
-        self.controls.progress_slider.sliderReleased.connect(
+        controls.progress_slider.sliderReleased.connect(
             self._seek
         )
-        self.controls.volume_slider.valueChanged.connect(
+        controls.volume_slider.valueChanged.connect(
             self._change_volume
         )
-        self.controls.volume_slider.sliderReleased.connect(
+        controls.volume_slider.sliderReleased.connect(
             self._finish_volume_change
         )
-        self.controls.mute_button.clicked.connect(
-            self._toggle_mute
+        controls.mute_button.clicked.connect(
+            self.playback.toggle_mute
         )
 
-    def _setup_timers(self):
-        self.playback_timer = QTimer(self)
-        self.playback_timer.setInterval(250)
-        self.playback_timer.timeout.connect(
-            self._update_playback_state
+        self.playback.media_loaded.connect(
+            self._on_media_loaded
         )
-        self.playback_timer.start()
+        self.playback.navigation_changed.connect(
+            controls.set_navigation_enabled
+        )
+        self.playback.playing_changed.connect(
+            controls.set_playing
+        )
+        self.playback.progress_changed.connect(
+            controls.update_progress
+        )
+        self.playback.playback_finished.connect(
+            controls.set_finished
+        )
+        self.playback.volume_changed.connect(
+            self._on_volume_changed
+        )
+        self.playback.error_occurred.connect(
+            self._show_error
+        )
+
+    def _setup_shortcuts(self):
+        bindings = (
+            ("Space", self.playback.toggle_playback, False),
+            (
+                "Left",
+                lambda: self.playback.seek_relative(-10_000),
+                True,
+            ),
+            (
+                "Right",
+                lambda: self.playback.seek_relative(10_000),
+                True,
+            ),
+            ("Up", self._increase_volume, True),
+            ("Down", self._decrease_volume, True),
+            ("M", self.playback.toggle_mute, False),
+            ("F", self._toggle_fullscreen, False),
+            ("Ctrl+Left", self.playback.play_previous, False),
+            ("Ctrl+Right", self.playback.play_next, False),
+        )
+        self.shortcuts = []
+
+        for sequence, handler, auto_repeat in bindings:
+            shortcut = QShortcut(QKeySequence(sequence), self)
+            shortcut.setContext(
+                Qt.ShortcutContext.WindowShortcut
+            )
+            shortcut.setAutoRepeat(auto_repeat)
+            shortcut.activated.connect(handler)
+            self.shortcuts.append(shortcut)
+
+    def _setup_timers(self):
+        self.progress_timer = QTimer(self)
+        self.progress_timer.setInterval(250)
+        self.progress_timer.timeout.connect(self.playback.poll)
+        self.progress_timer.start()
 
         self.controls_hide_timer = QTimer(self)
         self.controls_hide_timer.setSingleShot(True)
@@ -172,6 +244,7 @@ class MainWindow(QMainWindow):
 
     def _setup_mouse_tracking(self):
         self.setMouseTracking(True)
+
         for widget in self.findChildren(QWidget):
             widget.setMouseTracking(True)
 
@@ -179,38 +252,20 @@ class MainWindow(QMainWindow):
         if application is not None:
             application.installEventFilter(self)
 
-    def _setup_shortcuts(self):
-        bindings = (
-            ("Space", self._toggle_playback, False),
-            (
-                "Left",
-                lambda: self._seek_relative(-10_000),
-                True,
-            ),
-            (
-                "Right",
-                lambda: self._seek_relative(10_000),
-                True,
-            ),
-            ("Up", self._increase_volume, True),
-            ("Down", self._decrease_volume, True),
-            ("M", self._toggle_mute, False),
-            ("F", self._toggle_fullscreen, False),
-            ("Ctrl+Left", self._play_previous, False),
-            ("Ctrl+Right", self._play_next, False),
-        )
-        self.shortcuts = []
-
-        for sequence, handler, auto_repeat in bindings:
-            shortcut = QShortcut(QKeySequence(sequence), self)
-            shortcut.setContext(
-                Qt.ShortcutContext.WindowShortcut
-            )
-            shortcut.setAutoRepeat(auto_repeat)
-            shortcut.activated.connect(handler)
-            self.shortcuts.append(shortcut)
-
     def eventFilter(self, watched, event):
+        if (
+            watched is self.video_interaction_layer
+            and event.type() == QEvent.Type.MouseButtonPress
+            and event.button() == Qt.MouseButton.LeftButton
+        ):
+            self.playback.toggle_playback()
+
+            if self.isFullScreen():
+                self._show_fullscreen_controls()
+
+            event.accept()
+            return True
+
         if (
             watched is self.video_frame
             and event.type() == QEvent.Type.Resize
@@ -231,329 +286,33 @@ class MainWindow(QMainWindow):
 
         return super().eventFilter(watched, event)
 
-    @log_call
-    def _open_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Виберіть медіафайл",
-            "",
-            get_media_file_filter(),
-        )
-
-        if not file_path:
-            return
-
-        if not is_supported_media_file(file_path):
-            self._show_error(
-                "Непідтримуваний файл",
-                "Вибраний файл не є підтримуваним медіа.",
-            )
-            return
-
-        index = self._add_to_playlist(
-            file_path,
-            Path(file_path).name,
-        )
-        self._load_playlist_index(index)
-
-    @log_call
-    def _add_files_to_playlist(self):
-        file_paths, _ = QFileDialog.getOpenFileNames(
-            self,
-            "Додати медіафайли до плейлиста",
-            "",
-            get_media_file_filter(),
-        )
-        invalid_files_count = 0
-
-        for file_path in file_paths:
-            if not is_supported_media_file(file_path):
-                invalid_files_count += 1
-                continue
-
-            self._add_to_playlist(
-                file_path,
-                Path(file_path).name,
-            )
-
-        if invalid_files_count:
-            self._show_error(
-                "Непідтримувані файли",
-                "Частину вибраних файлів не додано, "
-                "оскільки їх формат не підтримується.",
-            )
-
-    def _get_dropped_media_files(self, mime_data):
-        if not mime_data.hasUrls():
-            return []
-
-        return [
-            str(Path(url.toLocalFile()))
-            for url in mime_data.urls()
-            if url.isLocalFile()
-            and is_supported_media_file(url.toLocalFile())
-        ]
-
-    def dragEnterEvent(self, event):
-        if self._get_dropped_media_files(event.mimeData()):
-            event.acceptProposedAction()
-        else:
-            event.ignore()
-
-    def dropEvent(self, event):
-        file_paths = self._get_dropped_media_files(
-            event.mimeData()
-        )
-
-        if not file_paths:
-            event.ignore()
-            return
-
-        first_index = None
-
-        for file_path in file_paths:
-            index = self._add_to_playlist(
-                file_path,
-                Path(file_path).name,
-            )
-            if first_index is None:
-                first_index = index
-
-        self._load_playlist_index(first_index)
-        event.acceptProposedAction()
-
-    @log_call
-    def _open_url(self):
-        url, confirmed = QInputDialog.getText(
-            self,
-            "Відкрити URL",
-            "Введіть пряме посилання на медіафайл:",
-        )
-        url = url.strip()
-
-        if not confirmed or not url:
-            return
-
-        if not is_valid_media_url(url):
-            self._show_error(
-                "Некоректний URL",
-                "Введіть повне посилання, яке починається "
-                "з http:// або https://.",
-            )
-            return
-
-        index = self._add_to_playlist(url, url)
-        self._load_playlist_index(index)
-
-    def _add_to_playlist(self, source, display_name):
-        index = self.playlist.add(source, display_name)
-        self.playlist_panel.add_item(display_name, source)
-        self._sync_navigation_state()
-        return index
-
-    def _load_playlist_index(self, index):
-        item = self.playlist.select(index)
-
-        if item is None:
-            return False
-
-        self.playlist_panel.select(index)
-        self.load_media(item.source, item.display_name)
-        self._sync_navigation_state()
-        return True
-
-    def _play_playlist_item(self, item):
-        index = self.playlist_panel.list_widget.row(item)
-        self._load_playlist_index(index)
-
-    @log_call
-    def _play_previous(self):
-        index = self.playlist.get_previous_index()
-
-        if index is not None:
-            self._load_playlist_index(index)
-
-    @log_call
-    def _play_next(self):
-        index = self.playlist.get_next_index()
-
-        if index is not None:
-            self._load_playlist_index(index)
-
-    def _sync_navigation_state(self):
-        current_index = self.playlist.get_current_index()
-        last_index = self.playlist.count() - 1
-        self.controls.set_navigation_enabled(
-            current_index > 0,
-            0 <= current_index < last_index,
-        )
-
-    @log_call
-    def _toggle_playlist_panel(self):
-        show_playlist = self.playlist_panel.isHidden()
-        self.playlist_panel.setVisible(show_playlist)
-        self.controls.playlist_toggle_button.setChecked(
-            show_playlist
-        )
-
-        if self.isFullScreen():
-            self._playlist_was_visible_before_fullscreen = (
-                show_playlist
-            )
-
-        self._schedule_layout_update()
-        self.controls.raise_()
-
-    @log_call
-    def load_media(self, media_source, display_name=None):
-        self.current_media_source = media_source
-        self._playback_finished = False
-        self._playback_error_shown = False
-        self.player.load(media_source)
-        rate = self.controls.speed_combo.currentData()
-
-        if rate is not None:
-            self.player.set_playback_rate(rate)
-
-        self.controls.set_media(
-            display_name or Path(media_source).name,
-            media_source,
-        )
-
-        if self.player.play():
-            self._playback_finished = False
-            self.controls.set_playing(True)
-            self._schedule_layout_update()
-        else:
-            self._show_playback_error()
-
-    @log_call
-    def _seek(self):
-        position = self.controls.progress_slider.value() / 1000
-        self.player.set_position(position)
-        self._playback_finished = False
-        self._update_playback_state()
-
-    def _seek_relative(self, offset_ms):
-        if self.current_media_source is None:
-            return
-
-        self.player.seek_relative(offset_ms)
-        self._playback_finished = False
-        self._update_playback_state()
-
-    def _change_playback_rate(self, index):
-        rate = self.controls.speed_combo.itemData(index)
-
-        if rate is not None and self.current_media_source is not None:
-            self.player.set_playback_rate(rate)
-
-    def _increase_volume(self):
-        slider = self.controls.volume_slider
-        slider.setValue(min(100, slider.value() + 5))
-
-    def _decrease_volume(self):
-        slider = self.controls.volume_slider
-        slider.setValue(max(0, slider.value() - 5))
-
-    def _change_volume(self, volume):
-        self.player.set_volume(
-            volume,
-            remember=(
-                not self.controls.volume_slider.isSliderDown()
-            ),
-        )
-        self.controls.set_volume_state(
-            self.player.get_volume(),
-            self.player.is_muted(),
-        )
-
-    def _finish_volume_change(self):
-        self.player.set_volume(
-            self.controls.volume_slider.value()
-        )
-        self._sync_volume_state()
-
-    @log_call
-    def _toggle_mute(self):
-        self.player.toggle_mute()
-        self._sync_volume_state()
-
-    def _sync_volume_state(self):
-        slider = self.controls.volume_slider
-        blocker = QSignalBlocker(slider)
-        slider.setValue(self.player.get_volume())
-        del blocker
-        self.controls.set_volume_state(
-            self.player.get_volume(),
-            self.player.is_muted(),
-        )
-
-    @log_call
-    def _toggle_playback(self):
-        if self.current_media_source is None:
-            return
-
-        if self.player.is_playing():
-            self.player.pause()
-            self.controls.set_playing(False)
-            return
-
-        if self.player.play():
-            self._playback_finished = False
-            self.controls.set_playing(True)
-
-    def _update_playback_state(self):
-        if self.current_media_source is None:
-            return
-
-        if self.player.has_error():
-            self._show_playback_error()
-            return
-
-        if self.player.has_ended():
-            if not self._playback_finished:
-                self._playback_finished = True
-                next_index = self.playlist.get_next_index()
-
-                if next_index is not None:
-                    self._load_playlist_index(next_index)
-                    return
-
-                self.controls.set_finished(
-                    self.player.get_length()
-                )
-            return
-
-        self.controls.update_progress(
-            self.player.get_time(),
-            self.player.get_length(),
-            self.player.get_position(),
-        )
-
-    def _show_playback_error(self):
-        if self._playback_error_shown:
-            return
-
-        self._playback_error_shown = True
-        self.controls.set_playing(False)
-        self._show_error(
-            "Помилка відтворення",
-            "Не вдалося відкрити медіа. Перевірте файл або URL.",
-        )
-
-    def _show_error(self, title, message):
-        logger.error("%s | %s", title, message)
-        QMessageBox.critical(self, title, message)
-
     def _schedule_layout_update(self):
         if hasattr(self, "layout_update_timer"):
             self.layout_update_timer.start()
 
     def _apply_layout_update(self):
+        self._position_video_interaction_layer()
         self._position_playlist_panel()
         self._position_controls_panel()
         self._update_video_aspect_ratio()
+
+    def _position_video_interaction_layer(self):
+        central_widget = self.centralWidget()
+
+        if central_widget is None:
+            return
+
+        video_position = self.video_frame.mapTo(
+            central_widget,
+            self.video_frame.rect().topLeft(),
+        )
+        self.video_interaction_layer.setGeometry(
+            video_position.x(),
+            video_position.y(),
+            self.video_frame.width(),
+            self.video_frame.height(),
+        )
+        self.video_interaction_layer.raise_()
 
     def _position_playlist_panel(self):
         central_widget = self.centralWidget()
@@ -606,6 +365,9 @@ class MainWindow(QMainWindow):
         self.controls.raise_()
 
     def _update_video_aspect_ratio(self):
+        if not hasattr(self, "player"):
+            return
+
         video_size = self.video_frame.size()
         self.player.set_video_aspect_ratio(
             video_size.width(),
@@ -631,6 +393,197 @@ class MainWindow(QMainWindow):
     def _hide_inactive_controls(self):
         if self.isFullScreen():
             self.controls.hide()
+
+    def _get_dropped_media_files(self, mime_data):
+        if not mime_data.hasUrls():
+            return []
+
+        return [
+            str(Path(url.toLocalFile()))
+            for url in mime_data.urls()
+            if url.isLocalFile()
+            and is_supported_media_file(url.toLocalFile())
+        ]
+
+    def dragEnterEvent(self, event):
+        if self._get_dropped_media_files(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        file_paths = self._get_dropped_media_files(
+            event.mimeData()
+        )
+
+        if not file_paths:
+            event.ignore()
+            return
+
+        first_index = None
+
+        for file_path in file_paths:
+            index = self._add_to_playlist(
+                file_path,
+                Path(file_path).name,
+            )
+            if first_index is None:
+                first_index = index
+
+        self.playback.play_index(first_index)
+        event.acceptProposedAction()
+
+    @log_call
+    def _open_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Виберіть медіафайл",
+            "",
+            get_media_file_filter(),
+        )
+
+        if not file_path:
+            return
+
+        if not is_supported_media_file(file_path):
+            self._show_error(
+                "Непідтримуваний файл",
+                "Вибраний файл не є підтримуваним медіа.",
+            )
+            return
+
+        index = self._add_to_playlist(
+            file_path,
+            Path(file_path).name,
+        )
+        self.playback.load_index(index)
+
+    @log_call
+    def _add_files_to_playlist(self):
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Додати медіафайли до плейлиста",
+            "",
+            get_media_file_filter(),
+        )
+        invalid_files_count = 0
+
+        for file_path in file_paths:
+            if not is_supported_media_file(file_path):
+                invalid_files_count += 1
+                continue
+
+            self._add_to_playlist(
+                file_path,
+                Path(file_path).name,
+            )
+
+        if invalid_files_count:
+            self._show_error(
+                "Непідтримувані файли",
+                "Частину вибраних файлів не додано, "
+                "оскільки їх формат не підтримується.",
+            )
+
+    @log_call
+    def _open_url(self):
+        url, confirmed = QInputDialog.getText(
+            self,
+            "Відкрити URL",
+            "Введіть пряме посилання на медіафайл:",
+        )
+        url = url.strip()
+
+        if not confirmed or not url:
+            return
+
+        if not is_valid_media_url(url):
+            self._show_error(
+                "Некоректний URL",
+                "Введіть повне посилання, яке починається "
+                "з http:// або https://.",
+            )
+            return
+
+        index = self._add_to_playlist(url, url)
+        self.playback.load_index(index)
+
+    def _add_to_playlist(self, source, display_name):
+        index = self.playback.add_to_playlist(
+            source,
+            display_name,
+        )
+        self.playlist_panel.add_item(display_name, source)
+        return index
+
+    def _play_playlist_item(self, item):
+        index = self.playlist_panel.list_widget.row(item)
+        self.playback.play_index(index)
+
+    @log_call
+    def _toggle_playlist_panel(self):
+        show_playlist = self.playlist_panel.isHidden()
+        self.playlist_panel.setVisible(show_playlist)
+        self.controls.playlist_toggle_button.setChecked(
+            show_playlist
+        )
+
+        if self.isFullScreen():
+            self._playlist_was_visible_before_fullscreen = (
+                show_playlist
+            )
+
+        self._schedule_layout_update()
+        self.controls.raise_()
+
+    def _on_media_loaded(self, index, display_name, source):
+        self.current_media_source = source
+        self.playlist_panel.select(index)
+        self.controls.set_media(display_name, source)
+        self._schedule_layout_update()
+
+    def _seek(self):
+        self.playback.seek_to(
+            self.controls.progress_slider.value() / 1000
+        )
+
+    def _change_playback_rate(self, index):
+        rate = self.controls.speed_combo.itemData(index)
+
+        if rate is not None:
+            self.playback.set_playback_rate(rate)
+
+    def _increase_volume(self):
+        slider = self.controls.volume_slider
+        slider.setValue(min(100, slider.value() + 5))
+
+    def _decrease_volume(self):
+        slider = self.controls.volume_slider
+        slider.setValue(max(0, slider.value() - 5))
+
+    def _change_volume(self, volume):
+        self.playback.set_volume(
+            volume,
+            remember=(
+                not self.controls.volume_slider.isSliderDown()
+            ),
+        )
+
+    def _finish_volume_change(self):
+        self.playback.set_volume(
+            self.controls.volume_slider.value()
+        )
+
+    def _on_volume_changed(self, volume, muted):
+        slider = self.controls.volume_slider
+        blocker = QSignalBlocker(slider)
+        slider.setValue(volume)
+        del blocker
+        self.controls.set_volume_state(volume, muted)
+
+    def _show_error(self, title, message):
+        logger.error("%s | %s", title, message)
+        QMessageBox.critical(self, title, message)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -698,7 +651,7 @@ class MainWindow(QMainWindow):
     @log_call
     def closeEvent(self, event):
         for timer in (
-            self.playback_timer,
+            self.progress_timer,
             self.controls_hide_timer,
             self.mouse_activity_timer,
             self.layout_update_timer,
@@ -709,5 +662,5 @@ class MainWindow(QMainWindow):
         if application is not None:
             application.removeEventFilter(self)
 
-        self.player.release()
+        self.playback.release()
         event.accept()
