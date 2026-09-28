@@ -18,13 +18,10 @@ from ui.controls_panel import ControlsPanel
 from ui.menu_bar import setup_menu_bar
 from ui.playlist_panel import PlaylistPanel
 from utils.logger import log_call
-from utils.media_sources import is_valid_media_url
-
-
-MEDIA_FILTER = (
-    "Медіафайли "
-    "(*.mp4 *.mkv *.avi *.mov *.webm *.mp3 *.wav);;"
-    "Усі файли (*)"
+from utils.media_sources import (
+    get_media_file_filter,
+    is_supported_media_file,
+    is_valid_media_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,6 +38,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Media Player")
         self.resize(960, 640)
         self.setMinimumSize(720, 480)
+        self.setAcceptDrops(True)
 
         self.menu_actions = setup_menu_bar(self)
 
@@ -130,10 +128,17 @@ class MainWindow(QMainWindow):
             self,
             "Виберіть медіафайл",
             "",
-            MEDIA_FILTER,
+            get_media_file_filter(),
         )
 
         if not file_path:
+            return
+
+        if not is_supported_media_file(file_path):
+            self._show_error(
+                "Непідтримуваний файл",
+                "Вибраний файл не є підтримуваним медіа.",
+            )
             return
 
         index = self._add_to_playlist(
@@ -148,14 +153,65 @@ class MainWindow(QMainWindow):
             self,
             "Додати медіафайли до плейлиста",
             "",
-            MEDIA_FILTER,
+            get_media_file_filter(),
         )
+        invalid_files_count = 0
 
         for file_path in file_paths:
+            if not is_supported_media_file(file_path):
+                invalid_files_count += 1
+                continue
+
             self._add_to_playlist(
                 file_path,
                 Path(file_path).name,
             )
+
+        if invalid_files_count:
+            self._show_error(
+                "Непідтримувані файли",
+                "Частину вибраних файлів не додано, "
+                "оскільки їх формат не підтримується.",
+            )
+
+    def _get_dropped_media_files(self, mime_data):
+        if not mime_data.hasUrls():
+            return []
+
+        return [
+            str(Path(url.toLocalFile()))
+            for url in mime_data.urls()
+            if url.isLocalFile()
+            and is_supported_media_file(url.toLocalFile())
+        ]
+
+    def dragEnterEvent(self, event):
+        if self._get_dropped_media_files(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        file_paths = self._get_dropped_media_files(
+            event.mimeData()
+        )
+
+        if not file_paths:
+            event.ignore()
+            return
+
+        first_index = None
+
+        for file_path in file_paths:
+            index = self._add_to_playlist(
+                file_path,
+                Path(file_path).name,
+            )
+            if first_index is None:
+                first_index = index
+
+        self._load_playlist_index(first_index)
+        event.acceptProposedAction()
 
     @log_call
     def _open_url(self):
