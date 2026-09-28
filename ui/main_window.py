@@ -40,11 +40,32 @@ class MainWindow(QMainWindow):
         self._was_maximized_before_fullscreen = False
         self._playlist_was_visible_before_fullscreen = False
         self._last_mouse_position = None
+
         self.setWindowTitle("Media Player")
         self.resize(960, 640)
         self.setMinimumSize(720, 480)
         self.setAcceptDrops(True)
 
+        self._setup_ui()
+
+        self.player = MediaPlayer()
+        self.playlist = Playlist()
+
+        self._connect_signals()
+        self._setup_shortcuts()
+        self._setup_timers()
+        self._setup_mouse_tracking()
+
+        self.player.set_video_output(
+            int(self.video_frame.winId())
+        )
+        self.player.set_volume(
+            self.controls.volume_slider.value()
+        )
+        self._sync_volume_state()
+        self._schedule_layout_update()
+
+    def _setup_ui(self):
         self.menu_actions = setup_menu_bar(self)
 
         central_widget = QWidget()
@@ -71,12 +92,7 @@ class MainWindow(QMainWindow):
         self.playlist_panel.raise_()
         self.controls.raise_()
 
-        self.player = MediaPlayer()
-        self.playlist = Playlist()
-        self.player.set_video_output(
-            int(self.video_frame.winId())
-        )
-
+    def _connect_signals(self):
         self.menu_actions.open_file.triggered.connect(
             self._open_file
         )
@@ -126,8 +142,7 @@ class MainWindow(QMainWindow):
             self._toggle_mute
         )
 
-        self._setup_shortcuts()
-
+    def _setup_timers(self):
         self.playback_timer = QTimer(self)
         self.playback_timer.setInterval(250)
         self.playback_timer.timeout.connect(
@@ -155,11 +170,7 @@ class MainWindow(QMainWindow):
             self._apply_layout_update
         )
 
-        self.player.set_volume(
-            self.controls.volume_slider.value()
-        )
-        self._sync_volume_state()
-
+    def _setup_mouse_tracking(self):
         self.setMouseTracking(True)
         for widget in self.findChildren(QWidget):
             widget.setMouseTracking(True)
@@ -167,8 +178,6 @@ class MainWindow(QMainWindow):
         application = QApplication.instance()
         if application is not None:
             application.installEventFilter(self)
-
-        self._schedule_layout_update()
 
     def _setup_shortcuts(self):
         bindings = (

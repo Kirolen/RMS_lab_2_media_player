@@ -32,16 +32,25 @@ class ControlsPanel(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self.setStyleSheet(PANEL_STYLE)
 
+        self._create_widgets()
+        self._create_icons()
+        self._configure_widgets()
+        self._build_layout()
+        self.set_media_enabled(False)
+
+    def _create_widgets(self):
         self.media_label = QLabel("Медіафайл не вибрано")
         self.current_time_label = QLabel("00:00")
         self.total_time_label = QLabel("00:00")
+
         self.progress_slider = QSlider(
             Qt.Orientation.Horizontal
         )
         self.progress_slider.setRange(0, 1000)
-        self.progress_slider.setEnabled(False)
+
         self.playlist_toggle_button = QPushButton("Плейлист")
         self.playlist_toggle_button.setCheckable(True)
+
         self.previous_button = QPushButton()
         self.backward_button = QPushButton()
         self.play_pause_button = QPushButton()
@@ -49,6 +58,7 @@ class ControlsPanel(QWidget):
         self.next_button = QPushButton()
         self.mute_button = QPushButton()
         self.fullscreen_button = QPushButton()
+
         self.speed_combo = QComboBox()
         for label, rate in (
             ("0.5x", 0.5),
@@ -58,6 +68,7 @@ class ControlsPanel(QWidget):
         ):
             self.speed_combo.addItem(label, rate)
         self.speed_combo.setCurrentIndex(1)
+
         self.volume_slider = QSlider(
             Qt.Orientation.Horizontal
         )
@@ -65,6 +76,7 @@ class ControlsPanel(QWidget):
         self.volume_slider.setValue(70)
         self.volume_value_label = QLabel("70%")
 
+    def _create_icons(self):
         style = self.style()
         self.previous_icon = style.standardIcon(
             QStyle.StandardPixmap.SP_MediaSkipBackward
@@ -97,53 +109,59 @@ class ControlsPanel(QWidget):
             QStyle.StandardPixmap.SP_MediaVolumeMuted
         )
 
-        for button, icon in (
+    def _configure_widgets(self):
+        icon_size = QSize(24, 24)
+        button_size = QSize(32, 30)
+        button_icons = (
             (self.previous_button, self.previous_icon),
             (self.backward_button, self.backward_icon),
             (self.play_pause_button, self.play_icon),
             (self.forward_button, self.forward_icon),
             (self.next_button, self.next_icon),
-        ):
-            button.setIcon(icon)
-            button.setIconSize(QSize(24, 24))
-            button.setFixedSize(QSize(32, 30))
+            (self.mute_button, self.volume_icon),
+            (self.fullscreen_button, self.fullscreen_icon),
+        )
 
+        for button, icon in button_icons:
+            button.setIcon(icon)
+            button.setIconSize(icon_size)
+            button.setFixedSize(button_size)
+
+        self.playlist_toggle_button.setFixedWidth(105)
+        self.speed_combo.setFixedWidth(64)
+        self.volume_slider.setFixedWidth(65)
+        self.volume_value_label.setFixedWidth(30)
+
+        self.playlist_toggle_button.setToolTip(
+            "Показати або сховати плейлист"
+        )
         self.previous_button.setToolTip(
             "Попередній елемент плейлиста (Ctrl+←)"
         )
         self.backward_button.setToolTip(
             "Назад на 10 секунд (←)"
         )
-        self.backward_button.setEnabled(False)
-        self.play_pause_button.setToolTip("Відтворити (Space)")
-        self.play_pause_button.setEnabled(False)
+        self.play_pause_button.setToolTip(
+            "Відтворити (Space)"
+        )
         self.forward_button.setToolTip(
             "Вперед на 10 секунд (→)"
         )
-        self.forward_button.setEnabled(False)
         self.next_button.setToolTip(
             "Наступний елемент плейлиста (Ctrl+→)"
         )
-        self.set_navigation_enabled(False, False)
-
-        self.playlist_toggle_button.setFixedWidth(105)
-        self.playlist_toggle_button.setToolTip(
-            "Показати або сховати плейлист"
+        self.fullscreen_button.setToolTip(
+            "На весь екран (F)"
         )
-
-        self.mute_button.setIcon(self.volume_icon)
-        self.mute_button.setIconSize(QSize(24, 24))
-        self.mute_button.setFixedSize(QSize(32, 30))
         self.mute_button.setToolTip("Вимкнути звук (M)")
-        self.fullscreen_button.setIcon(self.fullscreen_icon)
-        self.fullscreen_button.setIconSize(QSize(24, 24))
-        self.fullscreen_button.setFixedSize(QSize(32, 30))
-        self.fullscreen_button.setToolTip("На весь екран (F)")
-        self.speed_combo.setFixedWidth(64)
-        self.speed_combo.setToolTip("Швидкість відтворення")
-        self.volume_slider.setFixedWidth(65)
         self.volume_slider.setToolTip("Гучність (↑ / ↓)")
-        self.volume_value_label.setFixedWidth(30)
+        self.speed_combo.setToolTip("Швидкість відтворення")
+
+    def _build_layout(self):
+        timeline_layout = QHBoxLayout()
+        timeline_layout.addWidget(self.current_time_label)
+        timeline_layout.addWidget(self.progress_slider, stretch=1)
+        timeline_layout.addWidget(self.total_time_label)
 
         self.left_controls = QWidget()
         left_layout = QHBoxLayout(self.left_controls)
@@ -155,21 +173,27 @@ class ControlsPanel(QWidget):
         center_layout = QHBoxLayout(self.center_controls)
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(4)
-        center_layout.addWidget(self.previous_button)
-        center_layout.addWidget(self.backward_button)
-        center_layout.addWidget(self.play_pause_button)
-        center_layout.addWidget(self.forward_button)
-        center_layout.addWidget(self.next_button)
+        for button in (
+            self.previous_button,
+            self.backward_button,
+            self.play_pause_button,
+            self.forward_button,
+            self.next_button,
+        ):
+            center_layout.addWidget(button)
 
         self.right_controls = QWidget()
         right_layout = QHBoxLayout(self.right_controls)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(4)
-        right_layout.addWidget(self.speed_combo)
-        right_layout.addWidget(self.mute_button)
-        right_layout.addWidget(self.volume_slider)
-        right_layout.addWidget(self.volume_value_label)
-        right_layout.addWidget(self.fullscreen_button)
+        for widget in (
+            self.speed_combo,
+            self.mute_button,
+            self.volume_slider,
+            self.volume_value_label,
+            self.fullscreen_button,
+        ):
+            right_layout.addWidget(widget)
 
         side_width = max(
             self.left_controls.sizeHint().width(),
@@ -181,6 +205,7 @@ class ControlsPanel(QWidget):
         controls_layout.setColumnMinimumWidth(0, side_width)
         controls_layout.setColumnMinimumWidth(2, side_width)
         controls_layout.setColumnStretch(0, 1)
+        controls_layout.setColumnStretch(1, 0)
         controls_layout.setColumnStretch(2, 1)
         controls_layout.addWidget(
             self.left_controls,
@@ -201,14 +226,6 @@ class ControlsPanel(QWidget):
             Qt.AlignmentFlag.AlignRight,
         )
 
-        timeline_layout = QHBoxLayout()
-        timeline_layout.addWidget(self.current_time_label)
-        timeline_layout.addWidget(
-            self.progress_slider,
-            stretch=1,
-        )
-        timeline_layout.addWidget(self.total_time_label)
-
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(12, 8, 12, 8)
         self._layout.setSpacing(6)
@@ -216,22 +233,30 @@ class ControlsPanel(QWidget):
         self._layout.addLayout(timeline_layout)
         self._layout.addLayout(controls_layout)
 
-    def set_media(self, display_name, source):
-        self.media_label.setText(display_name)
-        self.media_label.setToolTip(source)
-        self.play_pause_button.setEnabled(True)
-        self.progress_slider.setEnabled(True)
-        self.current_time_label.setText("00:00")
-        self.total_time_label.setText("00:00")
-        self.progress_slider.setValue(0)
-        self.set_playing(False)
+    def set_media_enabled(self, enabled):
+        for widget in (
+            self.backward_button,
+            self.play_pause_button,
+            self.forward_button,
+            self.progress_slider,
+        ):
+            widget.setEnabled(enabled)
 
-        self.backward_button.setEnabled(True)
-        self.forward_button.setEnabled(True)
+        if not enabled:
+            self.set_navigation_enabled(False, False)
 
     def set_navigation_enabled(self, previous, next_):
         self.previous_button.setEnabled(previous)
         self.next_button.setEnabled(next_)
+
+    def set_media(self, display_name, source):
+        self.media_label.setText(display_name)
+        self.media_label.setToolTip(source)
+        self.current_time_label.setText("00:00")
+        self.total_time_label.setText("00:00")
+        self.progress_slider.setValue(0)
+        self.set_media_enabled(True)
+        self.set_playing(False)
 
     def set_playing(self, playing, restart=False):
         if playing:
@@ -240,11 +265,12 @@ class ControlsPanel(QWidget):
             return
 
         self.play_pause_button.setIcon(self.play_icon)
-        self.play_pause_button.setToolTip(
+        tooltip = (
             "Відтворити спочатку (Space)"
             if restart
             else "Відтворити (Space)"
         )
+        self.play_pause_button.setToolTip(tooltip)
 
     def update_progress(self, current_ms, total_ms, position):
         self.current_time_label.setText(format_time(current_ms))
@@ -290,15 +316,16 @@ class ControlsPanel(QWidget):
             self.progress_slider.sizeHint().height(),
             self.total_time_label.sizeHint().height(),
         )
+        controls_height = max(
+            self.left_controls.sizeHint().height(),
+            self.center_controls.sizeHint().height(),
+            self.right_controls.sizeHint().height(),
+        )
         return (
             margins.top()
             + margins.bottom()
             + self.media_label.sizeHint().height()
             + timeline_height
-            + max(
-                self.left_controls.sizeHint().height(),
-                self.center_controls.sizeHint().height(),
-                self.right_controls.sizeHint().height(),
-            )
+            + controls_height
             + self._layout.spacing() * 2
         )
