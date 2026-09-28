@@ -45,6 +45,7 @@ class ControlsPanel(QWidget):
         self.play_pause_button = QPushButton()
         self.next_button = QPushButton()
         self.mute_button = QPushButton()
+        self.fullscreen_button = QPushButton()
         self.volume_slider = QSlider(
             Qt.Orientation.Horizontal
         )
@@ -64,6 +65,12 @@ class ControlsPanel(QWidget):
         )
         self.next_icon = style.standardIcon(
             QStyle.StandardPixmap.SP_MediaSkipForward
+        )
+        self.fullscreen_icon = style.standardIcon(
+            QStyle.StandardPixmap.SP_TitleBarMaxButton
+        )
+        self.exit_fullscreen_icon = style.standardIcon(
+            QStyle.StandardPixmap.SP_TitleBarNormalButton
         )
         self.volume_icon = style.standardIcon(
             QStyle.StandardPixmap.SP_MediaVolume
@@ -100,6 +107,10 @@ class ControlsPanel(QWidget):
         self.mute_button.setIconSize(QSize(24, 24))
         self.mute_button.setFixedSize(QSize(32, 30))
         self.mute_button.setToolTip("Вимкнути звук")
+        self.fullscreen_button.setIcon(self.fullscreen_icon)
+        self.fullscreen_button.setIconSize(QSize(24, 24))
+        self.fullscreen_button.setFixedSize(QSize(32, 30))
+        self.fullscreen_button.setToolTip("На весь екран")
         self.volume_slider.setFixedWidth(65)
         self.volume_slider.setToolTip("Гучність")
         self.volume_value_label.setFixedWidth(30)
@@ -125,6 +136,7 @@ class ControlsPanel(QWidget):
         right_layout.addWidget(self.mute_button)
         right_layout.addWidget(self.volume_slider)
         right_layout.addWidget(self.volume_value_label)
+        right_layout.addWidget(self.fullscreen_button)
 
         side_width = max(
             self.left_controls.sizeHint().width(),
@@ -217,6 +229,18 @@ class ControlsPanel(QWidget):
         )
         self.mute_button.setToolTip(
             "Увімкнути звук" if muted else "Вимкнути звук"
+        )
+
+    def set_fullscreen_state(self, fullscreen):
+        self.fullscreen_button.setIcon(
+            self.exit_fullscreen_icon
+            if fullscreen
+            else self.fullscreen_icon
+        )
+        self.fullscreen_button.setToolTip(
+            "Вийти з повноекранного режиму (Escape)"
+            if fullscreen
+            else "На весь екран"
         )
 
     def height_hint(self):

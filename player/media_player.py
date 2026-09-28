@@ -1,8 +1,13 @@
+import logging
+from math import gcd
 import sys
 
 import vlc
 
 from utils.logger import log_call
+
+
+logger = logging.getLogger(__name__)
 
 
 class MediaPlayer:
@@ -22,13 +27,42 @@ class MediaPlayer:
 
     def set_video_output(self, window_id):
         self._window_id = window_id
+        self._apply_video_output()
+
+    def set_video_aspect_ratio(self, width, height):
+        if (
+            self._is_released
+            or self._media is None
+            or width <= 0
+            or height <= 0
+        ):
+            return
+
+        divisor = gcd(width, height)
+        aspect_ratio = (
+            f"{width // divisor}:{height // divisor}"
+        )
+        try:
+            self._player.video_set_aspect_ratio(aspect_ratio)
+        except OSError:
+            logger.debug(
+                "VLC відхилив зміну співвідношення сторін",
+                exc_info=True,
+            )
+
+    def _apply_video_output(self):
+        if self._is_released or self._window_id is None:
+            return
 
         if sys.platform.startswith("win"):
-            self._player.set_hwnd(window_id)
+            self._player.set_hwnd(self._window_id)
         elif sys.platform.startswith("linux"):
-            self._player.set_xwindow(window_id)
+            self._player.set_xwindow(self._window_id)
         elif sys.platform == "darwin":
-            self._player.set_nsobject(window_id)
+            self._player.set_nsobject(self._window_id)
+
+        self._player.video_set_mouse_input(False)
+        self._player.video_set_key_input(False)
 
     @log_call
     def load(self, file_path):
@@ -44,8 +78,7 @@ class MediaPlayer:
         if old_media is not None:
             old_media.release()
 
-        if self._window_id is not None:
-            self.set_video_output(self._window_id)
+        self._apply_video_output()
 
         self._player.audio_set_volume(self._volume)
 

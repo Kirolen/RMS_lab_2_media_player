@@ -1,8 +1,10 @@
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QSignalBlocker, QTimer, Qt
+from PySide6.QtCore import QEvent, QSignalBlocker, QTimer, Qt
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QFrame,
     QInputDialog,
@@ -35,6 +37,9 @@ class MainWindow(QMainWindow):
         self.current_media_source = None
         self._playback_finished = False
         self._playback_error_shown = False
+        self._was_maximized_before_fullscreen = False
+        self._playlist_was_visible_before_fullscreen = False
+        self._last_mouse_position = None
         self.setWindowTitle("Media Player")
         self.resize(960, 640)
         self.setMinimumSize(720, 480)
@@ -47,6 +52,7 @@ class MainWindow(QMainWindow):
 
         self.main_layout = QVBoxLayout(central_widget)
         self.main_layout.setContentsMargins(12, 12, 12, 12)
+        self.main_layout.setSpacing(10)
 
         self.video_frame = QFrame()
         self.video_frame.setObjectName("videoFrame")
@@ -95,6 +101,9 @@ class MainWindow(QMainWindow):
         self.controls.next_button.clicked.connect(
             self._play_next
         )
+        self.controls.fullscreen_button.clicked.connect(
+            self._toggle_fullscreen
+        )
         self.controls.progress_slider.sliderReleased.connect(
             self._seek
         )
@@ -115,12 +124,61 @@ class MainWindow(QMainWindow):
         )
         self.playback_timer.start()
 
+        self.controls_hide_timer = QTimer(self)
+        self.controls_hide_timer.setSingleShot(True)
+        self.controls_hide_timer.setInterval(5_000)
+        self.controls_hide_timer.timeout.connect(
+            self._hide_inactive_controls
+        )
+
+        self.mouse_activity_timer = QTimer(self)
+        self.mouse_activity_timer.setInterval(150)
+        self.mouse_activity_timer.timeout.connect(
+            self._check_mouse_activity
+        )
+
+        self.layout_update_timer = QTimer(self)
+        self.layout_update_timer.setSingleShot(True)
+        self.layout_update_timer.setInterval(0)
+        self.layout_update_timer.timeout.connect(
+            self._apply_layout_update
+        )
+
         self.player.set_volume(
             self.controls.volume_slider.value()
         )
         self._sync_volume_state()
 
-        QTimer.singleShot(0, self._position_overlay_panels)
+        self.setMouseTracking(True)
+        for widget in self.findChildren(QWidget):
+            widget.setMouseTracking(True)
+
+        application = QApplication.instance()
+        if application is not None:
+            application.installEventFilter(self)
+
+        self._schedule_layout_update()
+
+    def eventFilter(self, watched, event):
+        if (
+            watched is self.video_frame
+            and event.type() == QEvent.Type.Resize
+        ):
+            self._schedule_layout_update()
+
+        if (
+            event.type() == QEvent.Type.MouseMove
+            and self.isFullScreen()
+            and isinstance(watched, QWidget)
+            and (watched is self or self.isAncestorOf(watched))
+        ):
+            mouse_position = event.globalPosition().toPoint()
+
+            if mouse_position != self._last_mouse_position:
+                self._last_mouse_position = mouse_position
+                self._show_fullscreen_controls()
+
+        return super().eventFilter(watched, event)
 
     @log_call
     def _open_file(self):
@@ -286,7 +344,14 @@ class MainWindow(QMainWindow):
         self.controls.playlist_toggle_button.setChecked(
             show_playlist
         )
-        self._position_overlay_panels()
+
+        if self.isFullScreen():
+            self._playlist_was_visible_before_fullscreen = (
+                show_playlist
+            )
+
+        self._schedule_layout_update()
+        self.controls.raise_()
 
     @log_call
     def load_media(self, media_source, display_name=None):
@@ -302,6 +367,7 @@ class MainWindow(QMainWindow):
         if self.player.play():
             self._playback_finished = False
             self.controls.set_playing(True)
+            self._schedule_layout_update()
         else:
             self._show_playback_error()
 
@@ -402,9 +468,14 @@ class MainWindow(QMainWindow):
         logger.error("%s | %s", title, message)
         QMessageBox.critical(self, title, message)
 
-    def _position_overlay_panels(self):
+    def _schedule_layout_update(self):
+        if hasattr(self, "layout_update_timer"):
+            self.layout_update_timer.start()
+
+    def _apply_layout_update(self):
         self._position_playlist_panel()
         self._position_controls_panel()
+        self._update_video_aspect_ratio()
 
     def _position_playlist_panel(self):
         central_widget = self.centralWidget()
@@ -456,12 +527,109 @@ class MainWindow(QMainWindow):
         )
         self.controls.raise_()
 
+    def _update_video_aspect_ratio(self):
+        video_size = self.video_frame.size()
+        self.player.set_video_aspect_ratio(
+            video_size.width(),
+            video_size.height(),
+        )
+
+    def _show_fullscreen_controls(self):
+        self.controls.show()
+        self._position_controls_panel()
+        self.controls.raise_()
+        self.controls_hide_timer.start()
+
+    def _check_mouse_activity(self):
+        if not self.isFullScreen():
+            return
+
+        mouse_position = QCursor.pos()
+
+        if mouse_position != self._last_mouse_position:
+            self._last_mouse_position = mouse_position
+            self._show_fullscreen_controls()
+
+    def _hide_inactive_controls(self):
+        if self.isFullScreen():
+            self.controls.hide()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._position_overlay_panels()
+        self._schedule_layout_update()
+
+    @log_call
+    def _toggle_fullscreen(self):
+        if self.isFullScreen():
+            self._leave_fullscreen()
+        else:
+            self._enter_fullscreen()
+
+    def _enter_fullscreen(self):
+        self._was_maximized_before_fullscreen = self.isMaximized()
+        self._playlist_was_visible_before_fullscreen = (
+            self.playlist_panel.isVisible()
+        )
+        self.playlist_panel.hide()
+        self.controls.playlist_toggle_button.setChecked(False)
+        self.menuBar().hide()
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
+        self.showFullScreen()
+
+        self._last_mouse_position = QCursor.pos()
+        self.mouse_activity_timer.start()
+        self.controls.set_fullscreen_state(True)
+        self._show_fullscreen_controls()
+        self._schedule_layout_update()
+
+    def _leave_fullscreen(self):
+        self.controls_hide_timer.stop()
+        self.mouse_activity_timer.stop()
+        self._last_mouse_position = None
+        self.menuBar().show()
+        self.controls.show()
+        self.main_layout.setContentsMargins(12, 12, 12, 12)
+        self.main_layout.setSpacing(10)
+        self.playlist_panel.setVisible(
+            self._playlist_was_visible_before_fullscreen
+        )
+        self.controls.playlist_toggle_button.setChecked(
+            self._playlist_was_visible_before_fullscreen
+        )
+
+        if self._was_maximized_before_fullscreen:
+            self.showMaximized()
+        else:
+            self.showNormal()
+
+        self.controls.set_fullscreen_state(False)
+        self._schedule_layout_update()
+
+    def keyPressEvent(self, event):
+        if (
+            event.key() == Qt.Key.Key_Escape
+            and self.isFullScreen()
+        ):
+            self._toggle_fullscreen()
+            event.accept()
+            return
+
+        super().keyPressEvent(event)
 
     @log_call
     def closeEvent(self, event):
-        self.playback_timer.stop()
+        for timer in (
+            self.playback_timer,
+            self.controls_hide_timer,
+            self.mouse_activity_timer,
+            self.layout_update_timer,
+        ):
+            timer.stop()
+
+        application = QApplication.instance()
+        if application is not None:
+            application.removeEventFilter(self)
+
         self.player.release()
         event.accept()
