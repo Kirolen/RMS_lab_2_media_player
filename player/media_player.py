@@ -23,6 +23,7 @@ class MediaPlayer:
         self._volume = 70
         self._last_volume = 70
         self._is_muted = False
+        self._playback_rate = 1.0
         self._is_released = False
 
     def set_video_output(self, window_id):
@@ -90,7 +91,11 @@ class MediaPlayer:
         if self.has_ended():
             self._player.set_time(0)
 
-        return self._player.play() != -1
+        if self._player.play() == -1:
+            return False
+
+        self._player.set_rate(self._playback_rate)
+        return True
 
     @log_call
     def pause(self):
@@ -144,6 +149,37 @@ class MediaPlayer:
 
         position = min(1.0, max(0.0, position))
         self._player.set_position(position)
+
+    @log_call
+    def seek_relative(self, offset_ms):
+        if self._is_released or self._media is None:
+            return
+
+        total_time = self.get_length()
+
+        if total_time <= 0:
+            return
+
+        new_time = self.get_time() + int(offset_ms)
+        new_time = min(total_time, max(0, new_time))
+        self._player.set_time(new_time)
+
+    @log_call
+    def set_playback_rate(self, rate):
+        rate = float(rate)
+
+        if rate not in (0.5, 1.0, 1.5, 2.0):
+            return False
+
+        self._playback_rate = rate
+
+        if self._is_released:
+            return False
+
+        return self._player.set_rate(rate) != -1
+
+    def get_playback_rate(self):
+        return self._playback_rate
 
     @log_call
     def set_volume(self, volume, remember=True):

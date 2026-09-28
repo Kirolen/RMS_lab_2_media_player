@@ -1,5 +1,6 @@
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -42,10 +43,21 @@ class ControlsPanel(QWidget):
         self.playlist_toggle_button = QPushButton("Плейлист")
         self.playlist_toggle_button.setCheckable(True)
         self.previous_button = QPushButton()
+        self.backward_button = QPushButton()
         self.play_pause_button = QPushButton()
+        self.forward_button = QPushButton()
         self.next_button = QPushButton()
         self.mute_button = QPushButton()
         self.fullscreen_button = QPushButton()
+        self.speed_combo = QComboBox()
+        for label, rate in (
+            ("0.5x", 0.5),
+            ("1x", 1.0),
+            ("1.5x", 1.5),
+            ("2x", 2.0),
+        ):
+            self.speed_combo.addItem(label, rate)
+        self.speed_combo.setCurrentIndex(1)
         self.volume_slider = QSlider(
             Qt.Orientation.Horizontal
         )
@@ -57,11 +69,17 @@ class ControlsPanel(QWidget):
         self.previous_icon = style.standardIcon(
             QStyle.StandardPixmap.SP_MediaSkipBackward
         )
+        self.backward_icon = style.standardIcon(
+            QStyle.StandardPixmap.SP_MediaSeekBackward
+        )
         self.play_icon = style.standardIcon(
             QStyle.StandardPixmap.SP_MediaPlay
         )
         self.pause_icon = style.standardIcon(
             QStyle.StandardPixmap.SP_MediaPause
+        )
+        self.forward_icon = style.standardIcon(
+            QStyle.StandardPixmap.SP_MediaSeekForward
         )
         self.next_icon = style.standardIcon(
             QStyle.StandardPixmap.SP_MediaSkipForward
@@ -81,7 +99,9 @@ class ControlsPanel(QWidget):
 
         for button, icon in (
             (self.previous_button, self.previous_icon),
+            (self.backward_button, self.backward_icon),
             (self.play_pause_button, self.play_icon),
+            (self.forward_button, self.forward_icon),
             (self.next_button, self.next_icon),
         ):
             button.setIcon(icon)
@@ -89,12 +109,20 @@ class ControlsPanel(QWidget):
             button.setFixedSize(QSize(32, 30))
 
         self.previous_button.setToolTip(
-            "Попередній елемент плейлиста"
+            "Попередній елемент плейлиста (Ctrl+←)"
         )
-        self.play_pause_button.setToolTip("Відтворити")
+        self.backward_button.setToolTip(
+            "Назад на 10 секунд (←)"
+        )
+        self.backward_button.setEnabled(False)
+        self.play_pause_button.setToolTip("Відтворити (Space)")
         self.play_pause_button.setEnabled(False)
+        self.forward_button.setToolTip(
+            "Вперед на 10 секунд (→)"
+        )
+        self.forward_button.setEnabled(False)
         self.next_button.setToolTip(
-            "Наступний елемент плейлиста"
+            "Наступний елемент плейлиста (Ctrl+→)"
         )
         self.set_navigation_enabled(False, False)
 
@@ -106,13 +134,15 @@ class ControlsPanel(QWidget):
         self.mute_button.setIcon(self.volume_icon)
         self.mute_button.setIconSize(QSize(24, 24))
         self.mute_button.setFixedSize(QSize(32, 30))
-        self.mute_button.setToolTip("Вимкнути звук")
+        self.mute_button.setToolTip("Вимкнути звук (M)")
         self.fullscreen_button.setIcon(self.fullscreen_icon)
         self.fullscreen_button.setIconSize(QSize(24, 24))
         self.fullscreen_button.setFixedSize(QSize(32, 30))
-        self.fullscreen_button.setToolTip("На весь екран")
+        self.fullscreen_button.setToolTip("На весь екран (F)")
+        self.speed_combo.setFixedWidth(64)
+        self.speed_combo.setToolTip("Швидкість відтворення")
         self.volume_slider.setFixedWidth(65)
-        self.volume_slider.setToolTip("Гучність")
+        self.volume_slider.setToolTip("Гучність (↑ / ↓)")
         self.volume_value_label.setFixedWidth(30)
 
         self.left_controls = QWidget()
@@ -126,13 +156,16 @@ class ControlsPanel(QWidget):
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(4)
         center_layout.addWidget(self.previous_button)
+        center_layout.addWidget(self.backward_button)
         center_layout.addWidget(self.play_pause_button)
+        center_layout.addWidget(self.forward_button)
         center_layout.addWidget(self.next_button)
 
         self.right_controls = QWidget()
         right_layout = QHBoxLayout(self.right_controls)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(4)
+        right_layout.addWidget(self.speed_combo)
         right_layout.addWidget(self.mute_button)
         right_layout.addWidget(self.volume_slider)
         right_layout.addWidget(self.volume_value_label)
@@ -193,6 +226,9 @@ class ControlsPanel(QWidget):
         self.progress_slider.setValue(0)
         self.set_playing(False)
 
+        self.backward_button.setEnabled(True)
+        self.forward_button.setEnabled(True)
+
     def set_navigation_enabled(self, previous, next_):
         self.previous_button.setEnabled(previous)
         self.next_button.setEnabled(next_)
@@ -200,12 +236,14 @@ class ControlsPanel(QWidget):
     def set_playing(self, playing, restart=False):
         if playing:
             self.play_pause_button.setIcon(self.pause_icon)
-            self.play_pause_button.setToolTip("Пауза")
+            self.play_pause_button.setToolTip("Пауза (Space)")
             return
 
         self.play_pause_button.setIcon(self.play_icon)
         self.play_pause_button.setToolTip(
-            "Відтворити спочатку" if restart else "Відтворити"
+            "Відтворити спочатку (Space)"
+            if restart
+            else "Відтворити (Space)"
         )
 
     def update_progress(self, current_ms, total_ms, position):
@@ -228,7 +266,9 @@ class ControlsPanel(QWidget):
             self.muted_icon if muted else self.volume_icon
         )
         self.mute_button.setToolTip(
-            "Увімкнути звук" if muted else "Вимкнути звук"
+            "Увімкнути звук (M)"
+            if muted
+            else "Вимкнути звук (M)"
         )
 
     def set_fullscreen_state(self, fullscreen):
@@ -238,9 +278,9 @@ class ControlsPanel(QWidget):
             else self.fullscreen_icon
         )
         self.fullscreen_button.setToolTip(
-            "Вийти з повноекранного режиму (Escape)"
+            "Вийти з повноекранного режиму (F або Escape)"
             if fullscreen
-            else "На весь екран"
+            else "На весь екран (F)"
         )
 
     def height_hint(self):

@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QSignalBlocker, QTimer, Qt
-from PySide6.QtGui import QCursor
+from PySide6.QtGui import QCursor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -95,14 +95,23 @@ class MainWindow(QMainWindow):
         self.controls.previous_button.clicked.connect(
             self._play_previous
         )
+        self.controls.backward_button.clicked.connect(
+            lambda: self._seek_relative(-10_000)
+        )
         self.controls.play_pause_button.clicked.connect(
             self._toggle_playback
+        )
+        self.controls.forward_button.clicked.connect(
+            lambda: self._seek_relative(10_000)
         )
         self.controls.next_button.clicked.connect(
             self._play_next
         )
         self.controls.fullscreen_button.clicked.connect(
             self._toggle_fullscreen
+        )
+        self.controls.speed_combo.currentIndexChanged.connect(
+            self._change_playback_rate
         )
         self.controls.progress_slider.sliderReleased.connect(
             self._seek
@@ -116,6 +125,8 @@ class MainWindow(QMainWindow):
         self.controls.mute_button.clicked.connect(
             self._toggle_mute
         )
+
+        self._setup_shortcuts()
 
         self.playback_timer = QTimer(self)
         self.playback_timer.setInterval(250)
@@ -158,6 +169,37 @@ class MainWindow(QMainWindow):
             application.installEventFilter(self)
 
         self._schedule_layout_update()
+
+    def _setup_shortcuts(self):
+        bindings = (
+            ("Space", self._toggle_playback, False),
+            (
+                "Left",
+                lambda: self._seek_relative(-10_000),
+                True,
+            ),
+            (
+                "Right",
+                lambda: self._seek_relative(10_000),
+                True,
+            ),
+            ("Up", self._increase_volume, True),
+            ("Down", self._decrease_volume, True),
+            ("M", self._toggle_mute, False),
+            ("F", self._toggle_fullscreen, False),
+            ("Ctrl+Left", self._play_previous, False),
+            ("Ctrl+Right", self._play_next, False),
+        )
+        self.shortcuts = []
+
+        for sequence, handler, auto_repeat in bindings:
+            shortcut = QShortcut(QKeySequence(sequence), self)
+            shortcut.setContext(
+                Qt.ShortcutContext.WindowShortcut
+            )
+            shortcut.setAutoRepeat(auto_repeat)
+            shortcut.activated.connect(handler)
+            self.shortcuts.append(shortcut)
 
     def eventFilter(self, watched, event):
         if (
@@ -359,6 +401,11 @@ class MainWindow(QMainWindow):
         self._playback_finished = False
         self._playback_error_shown = False
         self.player.load(media_source)
+        rate = self.controls.speed_combo.currentData()
+
+        if rate is not None:
+            self.player.set_playback_rate(rate)
+
         self.controls.set_media(
             display_name or Path(media_source).name,
             media_source,
@@ -377,6 +424,28 @@ class MainWindow(QMainWindow):
         self.player.set_position(position)
         self._playback_finished = False
         self._update_playback_state()
+
+    def _seek_relative(self, offset_ms):
+        if self.current_media_source is None:
+            return
+
+        self.player.seek_relative(offset_ms)
+        self._playback_finished = False
+        self._update_playback_state()
+
+    def _change_playback_rate(self, index):
+        rate = self.controls.speed_combo.itemData(index)
+
+        if rate is not None and self.current_media_source is not None:
+            self.player.set_playback_rate(rate)
+
+    def _increase_volume(self):
+        slider = self.controls.volume_slider
+        slider.setValue(min(100, slider.value() + 5))
+
+    def _decrease_volume(self):
+        slider = self.controls.volume_slider
+        slider.setValue(max(0, slider.value() - 5))
 
     def _change_volume(self, volume):
         self.player.set_volume(
