@@ -89,14 +89,6 @@ class MainWindow(QMainWindow):
             "#videoFrame { background-color: #111111; }"
         )
 
-        self.video_interaction_layer = QWidget(central_widget)
-        self.video_interaction_layer.setObjectName(
-            "videoInteractionLayer"
-        )
-        self.video_interaction_layer.setStyleSheet(
-            "#videoInteractionLayer { background: transparent; }"
-        )
-
         self.playlist_panel = PlaylistPanel(central_widget)
         self.playlist_panel.hide()
 
@@ -106,7 +98,6 @@ class MainWindow(QMainWindow):
             self.video_frame,
             stretch=1,
         )
-        self.video_interaction_layer.raise_()
         self.playlist_panel.raise_()
         self.controls.raise_()
 
@@ -254,7 +245,7 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, watched, event):
         if (
-            watched is self.video_interaction_layer
+            watched is self.video_frame
             and event.type() == QEvent.Type.MouseButtonPress
             and event.button() == Qt.MouseButton.LeftButton
         ):
@@ -291,28 +282,9 @@ class MainWindow(QMainWindow):
             self.layout_update_timer.start()
 
     def _apply_layout_update(self):
-        self._position_video_interaction_layer()
         self._position_playlist_panel()
         self._position_controls_panel()
         self._update_video_aspect_ratio()
-
-    def _position_video_interaction_layer(self):
-        central_widget = self.centralWidget()
-
-        if central_widget is None:
-            return
-
-        video_position = self.video_frame.mapTo(
-            central_widget,
-            self.video_frame.rect().topLeft(),
-        )
-        self.video_interaction_layer.setGeometry(
-            video_position.x(),
-            video_position.y(),
-            self.video_frame.width(),
-            self.video_frame.height(),
-        )
-        self.video_interaction_layer.raise_()
 
     def _position_playlist_panel(self):
         central_widget = self.centralWidget()
