@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from player.media_player import MediaPlayer
 from player.playback_controller import PlaybackController
 from player.playlist import Playlist
+from player.remote_media_cache import RemoteMediaCache
 from ui.controls_panel import ControlsPanel
 from ui.menu_bar import setup_menu_bar
 from ui.playlist_panel import PlaylistPanel
@@ -40,6 +41,8 @@ class MainWindow(QMainWindow):
         self._was_maximized_before_fullscreen = False
         self._playlist_was_visible_before_fullscreen = False
         self._last_mouse_position = None
+        self._display_sources = {}
+        self._pending_remote_urls = set()
 
         self.setWindowTitle("Media Player")
         self.resize(960, 640)
@@ -55,6 +58,7 @@ class MainWindow(QMainWindow):
             self.playlist,
             self,
         )
+        self.remote_media_cache = RemoteMediaCache(self)
 
         self._connect_signals()
         self._setup_shortcuts()
@@ -174,6 +178,12 @@ class MainWindow(QMainWindow):
         )
         self.playback.error_occurred.connect(
             self._show_error
+        )
+        self.remote_media_cache.media_ready.connect(
+            self._on_remote_media_ready
+        )
+        self.remote_media_cache.download_failed.connect(
+            self._on_remote_media_failed
         )
 
     def _setup_shortcuts(self):
@@ -477,15 +487,48 @@ class MainWindow(QMainWindow):
             )
             return
 
-        index = self._add_to_playlist(url, url)
+        self._pending_remote_urls.add(url)
+        self.setWindowTitle("Media Player — завантаження...")
+        self.remote_media_cache.fetch(url)
+
+    def _on_remote_media_ready(self, url, cached_path):
+        self._finish_remote_download(url)
+        self._display_sources[cached_path] = url
+        index = self._add_to_playlist(
+            cached_path,
+            url,
+            tooltip_source=url,
+        )
         self.playback.load_index(index)
 
-    def _add_to_playlist(self, source, display_name):
+    def _on_remote_media_failed(self, url, message):
+        self._finish_remote_download(url)
+        self._show_error(
+            "Помилка завантаження",
+            "Не вдалося завантажити медіа за URL. "
+            f"{message}",
+        )
+
+    def _finish_remote_download(self, url):
+        self._pending_remote_urls.discard(url)
+
+        if not self._pending_remote_urls:
+            self.setWindowTitle("Media Player")
+
+    def _add_to_playlist(
+        self,
+        source,
+        display_name,
+        tooltip_source=None,
+    ):
         index = self.playback.add_to_playlist(
             source,
             display_name,
         )
-        self.playlist_panel.add_item(display_name, source)
+        self.playlist_panel.add_item(
+            display_name,
+            tooltip_source or source,
+        )
         return index
 
     def _play_playlist_item(self, item):
@@ -509,9 +552,10 @@ class MainWindow(QMainWindow):
         self.controls.raise_()
 
     def _on_media_loaded(self, index, display_name, source):
-        self.current_media_source = source
+        display_source = self._display_sources.get(source, source)
+        self.current_media_source = display_source
         self.playlist_panel.select(index)
-        self.controls.set_media(display_name, source)
+        self.controls.set_media(display_name, display_source)
         self._schedule_layout_update()
 
     def _seek(self):
@@ -635,4 +679,5 @@ class MainWindow(QMainWindow):
             application.removeEventFilter(self)
 
         self.playback.release()
+        self.remote_media_cache.release()
         event.accept()
