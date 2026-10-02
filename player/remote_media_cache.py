@@ -29,6 +29,7 @@ class RemoteMediaCache(QObject):
         self._network = QNetworkAccessManager(self)
         self._cached_paths = {}
         self._downloads = {}
+        self._pending_urls = set()
 
         if not self._directory.isValid():
             raise RuntimeError(
@@ -45,6 +46,9 @@ class RemoteMediaCache(QObject):
             )
             return
 
+        if url in self._pending_urls:
+            return
+
         request = QNetworkRequest(QUrl(url))
         request.setTransferTimeout(30_000)
         request.setAttribute(
@@ -53,6 +57,7 @@ class RemoteMediaCache(QObject):
         )
 
         reply = self._network.get(request)
+        self._pending_urls.add(url)
         file_path = self._build_file_path(url)
         file_handle = open(file_path, "wb")
         self._downloads[reply] = (url, file_path, file_handle)
@@ -93,6 +98,7 @@ class RemoteMediaCache(QObject):
             return
 
         url, file_path, file_handle = download
+        self._pending_urls.discard(url)
         self._write_remaining(reply, file_handle)
         file_handle.close()
 
@@ -134,4 +140,5 @@ class RemoteMediaCache(QObject):
             reply.deleteLater()
 
         self._cached_paths.clear()
+        self._pending_urls.clear()
         self._directory.remove()

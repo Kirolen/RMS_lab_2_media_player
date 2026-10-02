@@ -1,6 +1,7 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QHBoxLayout,
     QLabel,
     QListWidget,
     QPushButton,
@@ -51,16 +52,26 @@ class PlaylistPanel(QWidget):
             "Подвійне натискання запускає вибране медіа"
         )
 
-        self.add_button = QPushButton("Додати медіа")
+        self.add_button = QPushButton("Додати файли")
         self.add_button.setToolTip(
             "Додати файли до плейлиста"
         )
+        self.add_url_button = QPushButton("Додати URL")
+        self.add_url_button.setToolTip(
+            "Додати медіа за прямим посиланням"
+        )
+
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setContentsMargins(0, 0, 0, 0)
+        buttons_layout.setSpacing(6)
+        buttons_layout.addWidget(self.add_button)
+        buttons_layout.addWidget(self.add_url_button)
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(8, 8, 8, 8)
         self._layout.addWidget(self.label)
         self._layout.addWidget(self.list_widget)
-        self._layout.addWidget(self.add_button)
+        self._layout.addLayout(buttons_layout)
 
     def add_item(self, display_name, source):
         self.list_widget.addItem(display_name)

@@ -43,6 +43,7 @@ class MainWindow(QMainWindow):
         self._last_mouse_position = None
         self._display_sources = {}
         self._pending_remote_urls = set()
+        self._remote_load_requests = {}
 
         self.setWindowTitle("Media Player")
         self.resize(960, 640)
@@ -116,6 +117,9 @@ class MainWindow(QMainWindow):
         )
         self.playlist_panel.add_button.clicked.connect(
             self._add_files_to_playlist
+        )
+        self.playlist_panel.add_url_button.clicked.connect(
+            self._add_url_to_playlist
         )
         self.playlist_panel.list_widget.itemDoubleClicked.connect(
             self._play_playlist_item
@@ -469,9 +473,20 @@ class MainWindow(QMainWindow):
 
     @log_call
     def _open_url(self):
+        self._request_url(load_after_download=True)
+
+    @log_call
+    def _add_url_to_playlist(self):
+        self._request_url(load_after_download=False)
+
+    def _request_url(self, load_after_download):
         url, confirmed = QInputDialog.getText(
             self,
-            "Відкрити URL",
+            (
+                "Відкрити URL"
+                if load_after_download
+                else "Додати URL до плейлиста"
+            ),
             "Введіть пряме посилання на медіафайл:",
         )
         url = url.strip()
@@ -487,22 +502,38 @@ class MainWindow(QMainWindow):
             )
             return
 
+        self._start_remote_download(url, load_after_download)
+
+    def _start_remote_download(self, url, load_after_download):
+        self._remote_load_requests.setdefault(url, []).append(
+            load_after_download
+        )
         self._pending_remote_urls.add(url)
         self.setWindowTitle("Media Player — завантаження...")
         self.remote_media_cache.fetch(url)
 
     def _on_remote_media_ready(self, url, cached_path):
         self._finish_remote_download(url)
+        load_requests = self._remote_load_requests.pop(url, [])
+
+        if not load_requests:
+            return
+
         self._display_sources[cached_path] = url
-        index = self._add_to_playlist(
-            cached_path,
-            url,
-            tooltip_source=url,
-        )
-        self.playback.load_index(index)
+
+        for load_after_download in load_requests:
+            index = self._add_to_playlist(
+                cached_path,
+                url,
+                tooltip_source=url,
+            )
+
+            if load_after_download:
+                self.playback.load_index(index)
 
     def _on_remote_media_failed(self, url, message):
         self._finish_remote_download(url)
+        self._remote_load_requests.pop(url, None)
         self._show_error(
             "Помилка завантаження",
             "Не вдалося завантажити медіа за URL. "
