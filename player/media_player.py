@@ -111,6 +111,14 @@ class MediaPlayer:
             and bool(self._player.is_playing())
         )
 
+    @log_call
+    def stop(self):
+        if self._is_released or self._media is None:
+            return False
+
+        self._player.stop()
+        return True
+
     def has_ended(self):
         return (
             not self._is_released

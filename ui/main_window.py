@@ -137,6 +137,7 @@ class MainWindow(QMainWindow):
         controls.play_pause_button.clicked.connect(
             self.playback.toggle_playback
         )
+        controls.stop_button.clicked.connect(self.playback.stop)
         controls.forward_button.clicked.connect(
             lambda: self.playback.seek_relative(10_000)
         )
@@ -193,6 +194,7 @@ class MainWindow(QMainWindow):
     def _setup_shortcuts(self):
         bindings = (
             ("Space", self.playback.toggle_playback, False),
+            ("S", self.playback.stop, False),
             (
                 "Left",
                 lambda: self.playback.seek_relative(-10_000),

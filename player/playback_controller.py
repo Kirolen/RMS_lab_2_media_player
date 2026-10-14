@@ -22,6 +22,8 @@ class PlaybackController(QObject):
         self.current_source = None
         self._media_end_handled = False
         self._media_error_handled = False
+        self._stopped = False
+        self._stopped_length = 0
 
     def add_to_playlist(self, source, display_name):
         index = self.playlist.add(source, display_name)
@@ -50,6 +52,7 @@ class PlaybackController(QObject):
 
         self.playlist.select(index)
         self.current_source = item.source
+        self._stopped = False
         self._media_end_handled = False
         self._media_error_handled = False
         self.media_loaded.emit(
@@ -101,11 +104,32 @@ class PlaybackController(QObject):
             )
             return False
 
+        self._stopped = False
         self.playing_changed.emit(True)
+        return True
+
+    def stop(self):
+        if self.current_source is None:
+            return False
+
+        total_time = self.player.get_length() or self._stopped_length
+        if not self.player.stop():
+            return False
+
+        self._stopped = True
+        self._stopped_length = total_time
+        self._media_end_handled = False
+        self._media_error_handled = False
+        self.playing_changed.emit(False)
+        self.progress_changed.emit(0, total_time, 0.0)
         return True
 
     def poll(self):
         if self.current_source is None:
+            return
+
+        if self._stopped:
+            self.progress_changed.emit(0, self._stopped_length, 0.0)
             return
 
         if self.player.has_error():

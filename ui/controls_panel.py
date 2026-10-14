@@ -54,6 +54,7 @@ class ControlsPanel(QWidget):
         self.previous_button = QPushButton()
         self.backward_button = QPushButton()
         self.play_pause_button = QPushButton()
+        self.stop_button = QPushButton()
         self.forward_button = QPushButton()
         self.next_button = QPushButton()
         self.mute_button = QPushButton()
@@ -90,6 +91,9 @@ class ControlsPanel(QWidget):
         self.pause_icon = style.standardIcon(
             QStyle.StandardPixmap.SP_MediaPause
         )
+        self.stop_icon = style.standardIcon(
+            QStyle.StandardPixmap.SP_MediaStop
+        )
         self.forward_icon = style.standardIcon(
             QStyle.StandardPixmap.SP_MediaSeekForward
         )
@@ -116,6 +120,7 @@ class ControlsPanel(QWidget):
             (self.previous_button, self.previous_icon),
             (self.backward_button, self.backward_icon),
             (self.play_pause_button, self.play_icon),
+            (self.stop_button, self.stop_icon),
             (self.forward_button, self.forward_icon),
             (self.next_button, self.next_icon),
             (self.mute_button, self.volume_icon),
@@ -147,6 +152,7 @@ class ControlsPanel(QWidget):
         self.forward_button.setToolTip(
             "Вперед на 10 секунд (→)"
         )
+        self.stop_button.setToolTip("Зупинити відтворення (S)")
         self.next_button.setToolTip(
             "Наступний елемент плейлиста (Ctrl+→)"
         )
@@ -177,6 +183,7 @@ class ControlsPanel(QWidget):
             self.previous_button,
             self.backward_button,
             self.play_pause_button,
+            self.stop_button,
             self.forward_button,
             self.next_button,
         ):
@@ -237,6 +244,7 @@ class ControlsPanel(QWidget):
         for widget in (
             self.backward_button,
             self.play_pause_button,
+            self.stop_button,
             self.forward_button,
             self.progress_slider,
         ):
